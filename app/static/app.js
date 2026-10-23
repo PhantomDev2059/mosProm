@@ -1,5 +1,5 @@
 const $ = (s) => document.querySelector(s);
-const state = { mode: 'tpu', conf: 0.3, video: null, statsTimer: null };
+const state = { mode: 'tpu', conf: 0.3, video: null, statsTimer: null, seen: new Set(), audio: null };
 const SKELETON = [[15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
   [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]];
 const poseOn = () => ($('#pose').checked ? 1 : 0);
@@ -117,6 +117,8 @@ setupDrop($('#viddrop'), $('#vidfile'), async (files) => {
 function startVideo(info) {
   stopVideo(false);
   state.video = info;
+  state.seen = new Set();
+  try { state.audio ||= new AudioContext(); state.audio.resume(); } catch (err) { /* без звука */ }
   $('#videocard').hidden = false;
   $('#vidtitle').textContent = 'webcam' in info
     ? `${info.name} · ${$('#fps').value} к/с на ${state.mode.toUpperCase()}`
@@ -141,10 +143,46 @@ async function pollStats() {
   $('#s_tpu').textContent = s.tpu_ms ?? '–';
   $('#s_n').textContent = s.processed ?? 0;
   $('#s_classes').innerHTML = chipsHtml(s.classes || []);
-  if (s.events?.length) $('#s_events').innerHTML = s.events.map((e) => `<li class="${e.level}">${e.t} с · п.${e.code} ${e.title}</li>`).join('');
+  if (s.events?.length) {
+    $('#s_events').innerHTML = s.events.map((e) => `<li class="${e.level}">` +
+      (e.snap ? `<a href="/api/snap/${e.snap}" target="_blank"><img src="/api/snap/${e.snap}" alt=""></a>` : '') +
+      `<span>${e.time || ''} · п.${e.code} ${e.title}</span></li>`).join('');
+    for (const e of [...s.events].reverse()) {
+      const key = `${e.code}@${e.t}`;
+      if (!state.seen.has(key)) { state.seen.add(key); alarm(e); }
+    }
+  }
   $('#s_err').textContent = s.errors ? `ошибок: ${s.errors} (${s.last_error})` : '';
   if (s.done) clearInterval(state.statsTimer);
 }
+// ---------- оповещения: карточка с кадром, камерой, временем и типом + звук ----------
+function beep(critical) {
+  try {
+    state.audio ||= new AudioContext();
+    const ctx = state.audio;
+    [0, 0.3].concat(critical ? [0.6] : []).forEach((dt) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = critical ? 990 : 740; o.type = 'square';
+      g.gain.setValueAtTime(0.08, ctx.currentTime + dt); g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dt + 0.22);
+      o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + dt); o.stop(ctx.currentTime + dt + 0.25);
+    });
+  } catch (err) { /* звук не обязателен */ }
+}
+function alarm(e) {
+  const critical = e.level === 'critical';
+  const el = document.createElement('div');
+  el.className = 'toast ' + (critical ? '' : 'warn');
+  el.innerHTML = `<header><span>${critical ? '⛔ КРИТИЧНО' : '⚠ НАРУШЕНИЕ'} · п.${e.code}</span><button title="закрыть">×</button></header>
+    <div class="body"><b>${e.title}</b>${e.camera || ''} · ${e.time || ''} (t=${e.t} с)</div>
+    ${e.snap ? `<img src="/api/snap/${e.snap}" alt="кадр нарушения">` : ''}`;
+  el.querySelector('button').onclick = () => el.remove();
+  $('#toasts').prepend(el);
+  setTimeout(() => el.remove(), critical ? 20000 : 10000);
+  const wrap = document.querySelector('.videowrap');
+  wrap.classList.remove('alarm'); void wrap.offsetWidth; wrap.classList.add('alarm');
+  beep(critical);
+}
+
 $('#vidstop').onclick = () => stopVideo(false);
 $('#webcam').onclick = async () => startVideo(await (await fetch('/api/video/webcam', { method: 'POST' })).json());
 $('#vidrestart').onclick = () => state.video && startVideo(state.video);

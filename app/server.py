@@ -10,16 +10,16 @@ import sys
 import threading
 import time
 import uuid
-from collections import Counter, deque
+from collections import Counter, OrderedDict, deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'app'))
@@ -110,13 +110,14 @@ def pose_rules(person):
     if nose is not None and shoulders > 0:
         for wrist in (_pt(k, 9), _pt(k, 10)):
             if wrist is not None and np.linalg.norm(wrist - nose) < 0.45 * shoulders:
-                events.append({'code': '04', 'title': 'Курение? (кисть у рта)', 'level': 'warn'})
+                events.append({'code': '04', 'title': 'Курение? (кисть у рта)', 'level': 'warn', 'box': person['box']})
                 break
     lh, rh = _pt(k, 11), _pt(k, 12)
     if ls is not None and rs is not None and lh is not None and rh is not None:
         torso = (lh + rh) / 2 - (ls + rs) / 2
         if abs(torso[1]) < 0.6 * abs(torso[0]):  # корпус ближе к горизонтали, чем к вертикали
-            events.append({'code': '07', 'title': 'Человек лежит / падение', 'level': 'critical'})
+            events.append({'code': '07', 'title': 'Человек лежит / падение', 'level': 'critical',
+                           'box': person['box']})
     return events
 
 
@@ -124,8 +125,9 @@ def rules(dets):
     """Кандидаты в нарушения на одном кадре; подтверждение по времени (HOLD_S) — в потоке видео."""
     people = [d for d in dets if d['name'] == 'person']
     events = []
-    if people and any(d['name'] == 'cell phone' for d in dets):
-        events.append({'code': '03', 'title': 'Телефон в руках', 'level': 'warn'})
+    phones = [d for d in dets if d['name'] == 'cell phone']
+    if people and phones:
+        events.append({'code': '03', 'title': 'Телефон в руках', 'level': 'warn', 'box': phones[0]['box']})
     for p in people:
         if 'kpts' in p:
             events += [e for e in pose_rules(p) if e['code'] not in {x['code'] for x in events}]
@@ -136,7 +138,8 @@ def rules(dets):
                 vx = min(max(px, v['box'][0]), v['box'][2])
                 vy = min(max(py, v['box'][1]), v['box'][3])
                 if np.hypot(px - vx, py - vy) < 0.5 * ph:
-                    events.append({'code': '02', 'title': 'Опасное сближение с транспортом', 'level': 'critical'})
+                    events.append({'code': '02', 'title': 'Опасное сближение с транспортом', 'level': 'critical',
+                                   'box': p['box']})
                     break
         else:
             continue
@@ -289,6 +292,14 @@ def bench(mode: str = 'tpu', n: int = 20, inflight: int = 4, sample: str = '', p
 
 
 VIDEOS, STATS = {}, {}
+SNAPS = OrderedDict()  # снимки момента нарушения: id -> JPEG
+
+
+@app.get('/api/snap/{snap}')
+def snapshot(snap: str):
+    if snap not in SNAPS:
+        raise HTTPException(404)
+    return Response(SNAPS[snap], media_type='image/jpeg')
 
 
 @app.post('/api/video')
@@ -346,7 +357,52 @@ def draw_skeleton(frame, kpts):
                        -1, cv2.LINE_AA)
 
 
-def draw(frame, dets, hud, pending=''):
+_FONTS = {}
+
+
+def font(size):
+    if size not in _FONTS:
+        for name in ('arialbd.ttf', 'arial.ttf', 'DejaVuSans-Bold.ttf'):  # нужен шрифт с кириллицей
+            try:
+                _FONTS[size] = ImageFont.truetype(name, size)
+                break
+            except OSError:
+                continue
+        else:
+            _FONTS[size] = ImageFont.load_default()
+    return _FONTS[size]
+
+
+def draw_alerts(frame, alerts, pending):
+    """Подтверждённые нарушения — красная рамка кадра, баннер и рамка вокруг нарушителя;
+    замеченные, но ещё не подтверждённые — оранжевая полоса с отсчётом."""
+    h, w = frame.shape[:2]
+    for ev in alerts:
+        x1, y1, x2, y2 = map(int, ev['box'])
+        cv2.rectangle(frame, (x1 - 4, y1 - 4), (x2 + 4, y2 + 4), (0, 0, 255), 6)
+    if alerts:
+        cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (0, 0, 255), 14)
+        cv2.rectangle(frame, (0, h - 60), (w, h), (0, 0, 200), -1)
+    if pending:
+        cv2.rectangle(frame, (0, 26), (w, 60), (0, 120, 230), -1)
+    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    pen = ImageDraw.Draw(img)
+    for ev in alerts:
+        x1, y1 = int(ev['box'][0]), int(ev['box'][1])
+        pen.rectangle((x1 - 4, y1 - 34, x1 + 170, y1 - 4), fill=(255, 0, 0))
+        pen.text((x1 + 2, y1 - 32), 'НАРУШИТЕЛЬ', font=font(24), fill=(255, 255, 255))
+    if alerts:
+        text = '▲ НАРУШЕНИЕ: ' + ' · '.join(f"п.{e['code']} {e['title']}" for e in alerts)
+        size = 30
+        while size > 14 and pen.textlength(text, font=font(size)) > w - 32:  # уменьшаем, пока не влезет
+            size -= 2
+        pen.text((16, h - 30 - size // 2 - 2), text, font=font(size), fill=(255, 255, 255))
+    if pending:
+        pen.text((12, 31), 'проверка: ' + '   '.join(pending), font=font(22), fill=(255, 255, 255))
+    frame[:] = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+
+
+def draw(frame, dets, hud, pending=(), alerts=()):
     for d in dets:
         x1, y1, x2, y2 = map(int, d['box'])
         c = (40, 40, 230) if d['name'] == 'person' else color(d['cls'])
@@ -359,9 +415,8 @@ def draw(frame, dets, hud, pending=''):
         cv2.putText(frame, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.rectangle(frame, (0, 0), (frame.shape[1], 26), (20, 20, 20), -1)
     cv2.putText(frame, hud, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 255, 120), 1, cv2.LINE_AA)
-    if pending:  # нарушение замечено, идёт отсчёт до подтверждения
-        cv2.rectangle(frame, (0, 26), (frame.shape[1], 52), (0, 90, 200), -1)
-        cv2.putText(frame, pending, (8, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
+    if pending or alerts:
+        draw_alerts(frame, alerts, pending)
     return frame
 
 
@@ -419,29 +474,41 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25, pos
             stats['classes'].update(d['name'] for d in res['detections'])
             # нарушение становится событием, только если держится HOLD_S секунд подряд,
             # и даёт ровно одно событие, пока не прекратится (пропало дольше 1.5 с)
-            pending = []
+            pending, new_events = [], []
             for ev in rules(res['detections']):
                 s = recent_events.setdefault(ev['code'], {'since': sec, 'fired': False})
-                s['seen'] = sec
+                s['seen'], s['ev'] = sec, ev
                 held = sec - s['since']
                 if not s['fired'] and held >= HOLD_S.get(ev['code'], 1.0):
-                    s['fired'] = True
-                    stats['events'].appendleft({**ev, 't': round(sec, 1)})
+                    s['fired'], s['fired_at'] = True, sec
+                    new_events.append(ev)
                 if not s['fired']:
-                    pending.append(f"{ev['code']}: {held:.1f}/{HOLD_S.get(ev['code'], 1.0):.0f}s")
-            for code in [c for c, s in recent_events.items() if sec - s['seen'] > 1.5]:
-                del recent_events[code]
+                    pending.append(f"{ev['title']} {held:.1f} / {HOLD_S.get(ev['code'], 1.0):.0f} с")
+            # подтверждённое нарушение подсвечиваем, пока оно длится, и ещё минимум 3 с после срабатывания
+            alerts = [s['ev'] for s in recent_events.values()
+                      if s['fired'] and (sec - s['seen'] < 0.6 or sec - s['fired_at'] < 3)]
+            for code in [c for c, s in recent_events.items()
+                         if sec - s['seen'] > 1.5 and (not s['fired'] or sec - s['fired_at'] > 3)]:
+                del recent_events[code]  # нарушение прекратилось: следующее такое же будет новым событием
             hud = (f"{mode.upper()} | {stats['fps']:.1f} FPS | e2e {t.get('roundtrip_ms', 0):.0f} ms"
                    + (f" | tpu {t['tpu_ms']:.0f} ms" if 'tpu_ms' in t else '')
                    + (f" | cpu {t['cpu_ms']:.0f} ms" if 'cpu_ms' in t else '')
                    + f" | t={sec:.1f}s")
-            fired = [f"ALERT {c}" for c, s in recent_events.items() if s['fired']]
-            out = draw(frame, res['detections'], hud, '  '.join(fired + pending))
+            out = draw(frame, res['detections'], hud, pending, alerts)
+            ok, buf = cv2.imencode('.jpg', out, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            for ev in new_events:
+                # оповещение по кейсу: кадр-доказательство, камера, время, тип нарушения
+                snap = uuid.uuid4().hex[:12]
+                SNAPS[snap] = buf.tobytes()
+                while len(SNAPS) > 300:
+                    SNAPS.popitem(last=False)
+                stats['events'].appendleft({k: v for k, v in ev.items() if k != 'box'} | {
+                    't': round(sec, 1), 'snap': snap, 'camera': info['name'],
+                    'time': time.strftime('%H:%M:%S')})
             wait = 1.0 / max(fps, 0.1) - (time.perf_counter() - last_yield)
             if wait > 0:
                 time.sleep(wait)
             last_yield = time.perf_counter()
-            ok, buf = cv2.imencode('.jpg', out, [cv2.IMWRITE_JPEG_QUALITY, 80])
             return b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n'
 
         try:
