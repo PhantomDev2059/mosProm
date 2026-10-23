@@ -27,9 +27,10 @@ class Detector:
         self.backend = backend
         self.timings = {k: deque(maxlen=300) for k in ("pre", "infer", "post")}
 
-    def __call__(self, frame: np.ndarray) -> list[Detection]:
+    def __call__(self, frame: np.ndarray, prepared: tuple | None = None) -> list[Detection]:
+        """prepared — уже готовый letterbox этого кадра: несколько моделей с одним входом готовят кадр один раз."""
         t0 = time.perf_counter()
-        tensor, ratio, pad = letterbox(frame, self.spec.imgsz)
+        tensor, ratio, pad = prepared if prepared is not None else letterbox(frame, self.spec.imgsz)
         t1 = time.perf_counter()
         out = self.backend.run(tensor)
         t2 = time.perf_counter()

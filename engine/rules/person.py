@@ -78,10 +78,11 @@ class NoVest:
 
 @register("vehicle_proximity", "Опасное сближение с техникой")
 class VehicleProximity:
-    def __init__(self, min_distance_m: float = 2.5, min_gap_heights: float = 0.5, moving_only: bool = False,
-                 min_vehicle_speed: float = 0.15):
+    def __init__(self, min_distance_m: float = 2.5, min_gap_heights: float = 0.5, depth_tolerance: float = 0.25,
+                 moving_only: bool = False, min_vehicle_speed: float = 0.15):
         self.min_distance_m = min_distance_m
         self.min_gap_heights = min_gap_heights   # без калибровки пола: зазор в ростах человека
+        self.depth_tolerance = depth_tolerance   # ноги человека и низ техники на одной глубине (доля роста)
         self.moving_only = moving_only
         self.min_vehicle_speed = min_vehicle_speed
 
@@ -101,7 +102,12 @@ class VehicleProximity:
                 if dist < self.min_distance_m:
                     return Signal(1.0 - dist / self.min_distance_m, {"distance_m": round(dist, 1), "vehicle": v.cls})
                 continue
-            gap = Scene.gap_px(person, v.det) / max(person.height, 1.0)
+            # без калибровки пола пересечение рамок в кадре ничего не значит: техника может стоять в глубине.
+            # Сравниваем глубину по нижней кромке и считаем зазор только по горизонтали.
+            h = max(person.height, 1.0)
+            if abs(person.box[3] - v.det.box[3]) > self.depth_tolerance * h:
+                continue
+            gap = max(0.0, max(person.box[0], v.det.box[0]) - min(person.box[2], v.det.box[2])) / h
             if gap < self.min_gap_heights:
                 return Signal(1.0 - gap / self.min_gap_heights, {"gap_heights": round(gap, 2), "vehicle": v.cls})
         return None

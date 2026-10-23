@@ -22,8 +22,9 @@ def letterbox(img: np.ndarray, size: int = 640) -> tuple[np.ndarray, float, tupl
     top, left = round(pad_y - 0.1), round(pad_x - 0.1)
     canvas = np.full((size, size, 3), PAD_VALUE, np.uint8)
     canvas[top:top + nh, left:left + nw] = resized
-    tensor = canvas[:, :, ::-1].transpose(2, 0, 1)[None].astype(np.float32) / 255.0
-    return np.ascontiguousarray(tensor), r, (left, top)
+    # BGR→RGB, HWC→NCHW и /255 одним вызовом на C++
+    tensor = cv2.dnn.blobFromImage(canvas, scalefactor=1 / 255.0, swapRB=True)
+    return tensor, r, (left, top)
 
 
 def nms(boxes: np.ndarray, scores: np.ndarray, iou_thr: float) -> list[int]:

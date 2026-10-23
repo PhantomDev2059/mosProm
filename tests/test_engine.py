@@ -98,3 +98,20 @@ def test_fire_is_one_event_per_zone():
         fire = Detection(np.array([x, y, x + 60, y + 80], np.float32), 0.8, "fire")
         pipe.step([fire], i / FPS)
     assert len(opened) == 1
+
+
+def test_vehicle_far_behind_person_is_not_proximity():
+    from engine.rules import RuleContext, build_rule
+    from engine.scene import Scene, Zone
+    from engine.types import Track
+    rule = build_rule("vehicle_proximity", {})
+    p = person(400, 300, 80, 240)                                               # ноги на y=540
+    far = Detection(np.array([380, 250, 560, 380], np.float32), 0.9, "forklift")   # низ на y=380 — далеко в глубине
+    near = Detection(np.array([500, 360, 700, 545], np.float32), 0.9, "forklift")  # низ на y=545, рядом сбоку
+    tp = Track(1, "person", p, 0, 0)
+    zone = Zone("frame", "Весь кадр", None)
+    scene = Scene("c", [zone])
+    ctx_far = RuleContext(scene, zone, 0, [tp, Track(2, "forklift", far, 0, 0)])
+    ctx_near = RuleContext(scene, zone, 0, [tp, Track(3, "forklift", near, 0, 0)])
+    assert rule.evaluate(tp, ctx_far) is None
+    assert rule.evaluate(tp, ctx_near) is not None

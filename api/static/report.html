@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отчёт по смене · LinQ Guard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@700;800&family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Печатный документ: белая бумага, чёрный текст, сигнальные цвета только на метках уровня. */
+:root{--fg:#15191C;--muted:#5A646D;--line:#D5DADD;--crit:#B8251B;--high:#9A5B00;--medium:#0A58A8;--ok:#1A7044;
+  --f-display:"Fira Sans Extra Condensed","Arial Narrow",sans-serif;--f-body:"Golos Text",system-ui,sans-serif;--f-mono:"JetBrains Mono",ui-monospace,monospace;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:#fff;color:var(--fg);font:14px/1.5 var(--f-body)}
+.page{max-width:960px;margin:0 auto;padding:32px 24px 60px}
+.tape{height:10px;background:repeating-linear-gradient(-45deg,#F2B300 0 14px,#15191C 14px 28px)}
+.kicker{font:500 11px/1.4 var(--f-mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+h1{font:800 40px/1 var(--f-display);text-transform:uppercase;margin:10px 0 6px}
+h2{font:800 22px/1.1 var(--f-display);text-transform:uppercase;margin:28px 0 10px;border-bottom:2px solid var(--fg);padding-bottom:6px}
+.meta{color:var(--muted);margin:0 0 18px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.kpi{border:1px solid var(--line);border-radius:6px;padding:12px}
+.kpi b{display:block;font:800 34px/1 var(--f-display)}
+.kpi span{color:var(--muted);font-size:12.5px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 10.5px/1.3 var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.sev{font:600 10.5px/1 var(--f-mono);text-transform:uppercase;padding:3px 6px;border-radius:999px;border:1px solid currentColor;white-space:nowrap}
+.sev.critical{color:var(--crit)} .sev.high{color:var(--high)} .sev.medium{color:var(--medium)}
+.items{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.item{border:1px solid var(--line);border-radius:6px;overflow:hidden;break-inside:avoid}
+.item img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:#000}
+.item div{padding:8px 10px;display:grid;gap:3px}
+.item .t{font-weight:600}
+.item .m{font:500 11.5px/1.4 var(--f-mono);color:var(--muted)}
+.note{color:var(--muted);font-size:12.5px;margin-top:24px}
+.toolbar{display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px}
+.toolbar button{font:600 13px/1 var(--f-body);padding:8px 12px;border:1.5px solid var(--fg);background:#fff;border-radius:4px;cursor:pointer}
+@media print{.toolbar{display:none}.page{padding:0}}
+@media (max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.items{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="tape" aria-hidden="true"></div>
+<div class="page">
+  <div class="toolbar"><button type="button" onclick="window.print()">Печать / PDF</button></div>
+  <div class="kicker">LinQ Guard · отчёт по смене</div>
+  <h1 id="title">Загрузка…</h1>
+  <p class="meta" id="meta"></p>
+  <div class="kpis" id="kpis"></div>
+  <h2>Нарушения по категориям</h2>
+  <table><thead><tr><th>Нарушение</th><th>Уровень</th><th class="num">Найдено</th><th class="num">Подтверждено</th><th class="num">Ложных</th><th class="num">Суммарно, мин</th></tr></thead><tbody id="cats"></tbody></table>
+  <h2>По сотрудникам</h2>
+  <table><thead><tr><th>Сотрудник</th><th class="num">Нарушений</th><th>Что именно</th></tr></thead><tbody id="people"></tbody></table>
+  <h2 id="items-h">Подтверждённые нарушения</h2>
+  <div class="items" id="items"></div>
+  <p class="note">Отчёт сформирован системой LinQ Guard по записи камеры. В отчёт попадают ролики, которые ответственный подтвердил при разборе смены; время указано от начала записи.</p>
+</div>
+<script>
+const SEV = { critical: "критично", high: "высокий", medium: "средний" };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const hms = (s) => { s = Math.max(0, Math.round(s)); return [Math.floor(s / 3600), Math.floor(s % 3600 / 60), s % 60].map((v) => String(v).padStart(2, "0")).join(":"); };
+(async () => {
+  const id = new URLSearchParams(location.search).get("job");
+  const [jobs, items] = await Promise.all([fetch("/api/review/jobs").then((r) => r.json()), fetch(`/api/review/jobs/${encodeURIComponent(id)}/items`).then((r) => r.json())]);
+  const job = jobs.find((j) => j.id === id);
+  if (!job) { document.getElementById("title").textContent = "Отчёт не найден"; return; }
+  document.title = `${job.title} · отчёт по смене`;
+  document.getElementById("title").textContent = job.title;
+  const created = new Date(job.created * 1000).toLocaleString("ru-RU");
+  document.getElementById("meta").textContent = `Запись ${hms(job.video_s || 0)} · профиль «${job.preset_title}» · разбор от ${created}` +
+    (job.processed_s ? ` · обработка ${hms(job.processed_s)}` : "");
+  const conf = items.filter((i) => i.verdict === "confirmed"), rej = items.filter((i) => i.verdict === "rejected");
+  const crit = conf.filter((i) => i.severity === "critical").length;
+  document.getElementById("kpis").innerHTML = [
+    [items.length, "роликов найдено системой"], [conf.length, "подтверждено"], [crit, "критичных подтверждено"],
+    [items.length - conf.length - rej.length, "ещё не проверено"]].map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("");
+  const cats = {};
+  items.forEach((i) => { const c = (cats[i.title] ||= { sev: i.severity, n: 0, ok: 0, no: 0, dur: 0 }); c.n++; if (i.verdict === "confirmed") { c.ok++; c.dur += i.end_s - i.start_s; } if (i.verdict === "rejected") c.no++; });
+  document.getElementById("cats").innerHTML = Object.entries(cats).sort((a, b) => b[1].ok - a[1].ok || b[1].n - a[1].n)
+    .map(([t, c]) => `<tr><td>${esc(t)}</td><td><span class="sev ${c.sev}">${SEV[c.sev]}</span></td><td class="num">${c.n}</td><td class="num">${c.ok}</td><td class="num">${c.no}</td><td class="num">${(c.dur / 60).toFixed(1)}</td></tr>`).join("");
+  const people = {};
+  conf.forEach((i) => { const p = i.person || "Не указан"; (people[p] ||= []).push(i); });
+  document.getElementById("people").innerHTML = Object.entries(people).sort((a, b) => b[1].length - a[1].length).map(([p, list]) => {
+    const what = {}; list.forEach((i) => { what[i.title] = (what[i.title] || 0) + 1; });
+    return `<tr><td>${esc(p)}</td><td class="num">${list.length}</td><td>${Object.entries(what).map(([t, n]) => `${esc(t)} — ${n}`).join("; ")}</td></tr>`;
+  }).join("") || `<tr><td colspan="3">Подтверждённых нарушений нет.</td></tr>`;
+  const shown = conf.length ? conf : items.filter((i) => i.verdict !== "rejected");
+  if (!conf.length) document.getElementById("items-h").textContent = "Найденные нарушения (ещё не проверены)";
+  document.getElementById("items").innerHTML = shown.sort((a, b) => a.start_s - b.start_s).map((i) => `<div class="item"><img src="${esc(i.snapshot)}" alt="">
+    <div><span class="t">${esc(i.title)}</span><span class="m">${hms(i.start_s)}–${hms(i.end_s)} · ${Math.round(i.end_s - i.start_s)} с · уверенность ${Math.round(i.score * 100)}%</span>
+    <span class="m"><span class="sev ${i.severity}">${SEV[i.severity]}</span>${i.person ? " · " + esc(i.person) : ""}${i.note ? " · " + esc(i.note) : ""}</span></div></div>`).join("");
+})();
+</script>
+</body>
+</html>

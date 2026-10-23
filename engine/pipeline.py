@@ -7,6 +7,7 @@ import numpy as np
 from .config import CameraConfig
 from .detector import Detector
 from .events import Event, EventManager
+from .postprocess import letterbox
 from .rules import RuleContext, build_rule
 from .tracking import IouTracker
 from .types import PERSON, Detection, Track
@@ -35,8 +36,12 @@ class CameraPipeline:
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
         dets: list[Detection] = []
+        prepared: dict[int, tuple] = {}
         for d in self.detectors:
-            dets.extend(d(frame))
+            size = d.spec.imgsz
+            if size not in prepared:
+                prepared[size] = letterbox(frame, size)
+            dets.extend(d(frame, prepared[size]))
         return dets
 
     def step(self, detections: list[Detection], now: float, wall: datetime | None = None) -> FrameResult:

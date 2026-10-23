@@ -14,6 +14,7 @@
   <div class="brand"><span class="mark" aria-hidden="true"></span><b>LinQ Guard</b><span class="sub">контроль нарушений ТБ</span></div>
   <nav class="tabs" id="tabs">
     <a href="#monitor" data-view="monitor">Мониторинг</a>
+    <a href="#review" data-view="review">Разбор смены</a>
     <a href="#gallery" data-view="gallery">Галерея нарушений</a>
     <a href="#journal" data-view="journal">Журнал</a>
     <a href="#analytics" data-view="analytics">Аналитика</a>
@@ -38,6 +39,62 @@
         <div class="panel-h"><b>Лента событий</b><span class="muted small" id="feed-count"></span></div>
         <ul class="feed" id="feed"></ul>
       </aside>
+    </div>
+  </section>
+
+  <!-- РАЗБОР СМЕНЫ -->
+  <section class="view" id="view-review" hidden>
+    <div class="rv">
+      <aside class="rv-side">
+        <form class="card rv-new" id="rv-form">
+          <h3>Новый разбор</h3>
+          <label>Запись<select id="rv-source"></select></label>
+          <label class="rv-upload">или загрузить файл .mp4<input type="file" id="rv-file" accept="video/mp4,video/*"></label>
+          <label>Профиль участка<select id="rv-preset"></select></label>
+          <label>Название<input type="text" id="rv-title" placeholder="Например: Склад, ночная смена 23.10"></label>
+          <button class="btn primary" type="submit" id="rv-start">Разобрать запись</button>
+          <p class="muted small" id="rv-msg"></p>
+        </form>
+        <div class="panel-h"><b>Отчёты</b></div>
+        <ul class="rv-jobs" id="rv-jobs"></ul>
+      </aside>
+      <div class="rv-main" id="rv-main">
+        <div class="empty" id="rv-empty">Выберите отчёт слева или запустите разбор записи. Система просмотрит всю запись и оставит только ролики с нарушениями.</div>
+        <div id="rv-body" hidden>
+          <div class="rv-head">
+            <div><h2 id="rv-h-title"></h2><p class="muted" id="rv-h-meta"></p></div>
+            <div class="btns"><a class="btn" id="rv-report" target="_blank" rel="noopener">Отчёт по смене</a><a class="btn" id="rv-csv">CSV</a></div>
+          </div>
+          <div class="rv-progress" id="rv-progress" hidden><div class="bar"><i id="rv-bar"></i></div><span class="mono small" id="rv-ptext"></span></div>
+          <div class="rv-filters">
+            <div class="chips-row" id="rv-cats"></div>
+            <div class="seg" id="rv-verdicts" role="group" aria-label="Фильтр по решению">
+              <button type="button" data-v="" aria-pressed="true">Все</button><button type="button" data-v="pending" aria-pressed="false">Не проверены</button>
+              <button type="button" data-v="confirmed" aria-pressed="false">Подтверждены</button><button type="button" data-v="rejected" aria-pressed="false">Ложные</button>
+            </div>
+          </div>
+          <div class="rv-work">
+            <div class="rv-player card">
+              <video id="rv-video" controls muted loop playsinline></video>
+              <div class="rv-info">
+                <div class="m-top"><span class="pill" id="rv-sev"></span><span class="pill" id="rv-verdict"></span><span class="mono small muted" id="rv-pos"></span></div>
+                <h3 id="rv-i-title"></h3>
+                <p class="mono small" id="rv-i-time"></p>
+                <div class="conf"><span class="muted small">Уверенность</span><span class="track"><span class="fill" id="rv-conf"></span></span><span class="mono small" id="rv-conf-v"></span></div>
+                <label class="small muted">Сотрудник (необязательно)<input type="text" id="rv-person" placeholder="ФИО или табельный номер" list="rv-people"></label>
+                <datalist id="rv-people"></datalist>
+                <div class="btns">
+                  <button class="btn primary" type="button" id="rv-ok">Подтвердить <kbd>A</kbd></button>
+                  <button class="btn" type="button" id="rv-no">Ложное <kbd>X</kbd></button>
+                  <button class="btn" type="button" id="rv-prev"><kbd>↑</kbd></button>
+                  <button class="btn" type="button" id="rv-next"><kbd>↓</kbd></button>
+                </div>
+              </div>
+            </div>
+            <ol class="rv-list" id="rv-list"></ol>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 

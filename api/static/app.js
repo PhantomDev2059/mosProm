@@ -25,14 +25,14 @@ const sevPill = (s) => `<span class="pill ${esc(s)}">${esc(SEV[s] || s)}</span>`
 const stPill = (s) => `<span class="pill st-${esc(s)}">${esc(ST[s] || s)}</span>`;
 
 /* ---------- маршрутизация ---------- */
-const VIEWS = ["monitor", "gallery", "journal", "analytics", "zones", "webcam", "linq"];
+const VIEWS = ["monitor", "review", "gallery", "journal", "analytics", "zones", "webcam", "linq"];
 function show(view) {
   if (!VIEWS.includes(view)) view = "monitor";
   state.view = view;
   VIEWS.forEach((v) => { $("#view-" + v).hidden = v !== view; });
   document.querySelectorAll("#tabs a").forEach((a) => a.setAttribute("aria-current", a.dataset.view === view ? "page" : "false"));
   sendFrameWant();
-  ({ gallery: loadGallery, journal: loadJournal, analytics: loadAnalytics, zones: loadZones, linq: loadLinq })[view]?.();
+  ({ review: loadReview, gallery: loadGallery, journal: loadJournal, analytics: loadAnalytics, zones: loadZones, linq: loadLinq })[view]?.();
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
 
@@ -443,6 +443,140 @@ $("#wc-stop").addEventListener("click", () => {
   clearInterval(WC.timer); WC.ws?.close(); WC.stream?.getTracks().forEach((t) => t.stop());
   $("#wc-start").disabled = false; $("#wc-stop").disabled = true;
   $("#wc-status").textContent = "Камера остановлена.";
+});
+
+/* ---------- разбор смены ---------- */
+const RV = { jobs: [], job: null, items: [], cat: "", verdict: "", cur: 0, timer: null };
+const CAT_COLOR = { critical: "var(--crit)", high: "var(--high)", medium: "var(--medium)" };
+const hms = (s) => { s = Math.max(0, Math.round(s)); return [Math.floor(s / 3600), Math.floor(s % 3600 / 60), s % 60].map((v) => String(v).padStart(2, "0")).join(":"); };
+
+async function loadReview() {
+  const [sources, presets] = await Promise.all([api("/api/review/sources"), api("/api/review/presets")]);
+  const sel = $("#rv-source"), cur = sel.value;
+  sel.innerHTML = sources.sort((a, b) => b.duration_s - a.duration_s)
+    .map((s) => `<option value="${esc(s.path)}">${esc(s.name)} · ${hms(s.duration_s)}${s.uploaded ? " · загружено" : ""}</option>`).join("");
+  if (cur) sel.value = cur;
+  if (!$("#rv-preset").options.length) $("#rv-preset").innerHTML = presets.map((p) => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("");
+  await refreshJobs();
+  if (!RV.job && RV.jobs.length) selectJob(RV.jobs[0].id);
+}
+async function refreshJobs() {
+  RV.jobs = await api("/api/review/jobs");
+  $("#rv-jobs").innerHTML = RV.jobs.map((j) => {
+    const st = j.status === "done" ? `${j.items} роликов · проверено ${j.reviewed}` : j.status === "error" ? `ошибка: ${esc(j.error || "")}` : `обработка ${Math.round((j.progress || 0) * 100)}%`;
+    return `<li data-job="${esc(j.id)}" class="${RV.job === j.id ? "sel" : ""}"><span class="t">${esc(j.title)}</span>
+      <span class="m">${esc(j.preset_title)} · ${j.video_s ? hms(j.video_s) : "—"}</span><span class="m">${st}</span></li>`;
+  }).join("") || `<li class="empty">Отчётов пока нет.</li>`;
+  const job = RV.jobs.find((j) => j.id === RV.job);
+  if (job) renderJobHead(job);
+  clearTimeout(RV.timer);
+  if (state.view === "review" && RV.jobs.some((j) => j.status === "running" || j.status === "queued")) {
+    RV.timer = setTimeout(async () => { await refreshJobs(); if (RV.job) await loadItems(true); }, 2000);
+  }
+}
+$("#rv-jobs").addEventListener("click", (e) => { const li = e.target.closest("li[data-job]"); if (li) selectJob(li.dataset.job); });
+async function selectJob(id) {
+  RV.job = id; RV.cat = ""; RV.verdict = ""; RV.cur = 0;
+  $("#rv-empty").hidden = true; $("#rv-body").hidden = false;
+  document.querySelectorAll("#rv-jobs li").forEach((li) => li.classList.toggle("sel", li.dataset.job === id));
+  $("#rv-report").href = `/static/report.html?job=${encodeURIComponent(id)}`;
+  $("#rv-csv").href = `/api/review/jobs/${encodeURIComponent(id)}/report.csv`;
+  const job = RV.jobs.find((j) => j.id === id);
+  if (job) renderJobHead(job);
+  await loadItems();
+}
+function renderJobHead(j) {
+  $("#rv-h-title").textContent = j.title;
+  const speed = j.processed_s && j.video_s && j.status === "done" ? ` · обработана за ${hms(j.processed_s)}, в ${(j.video_s / j.processed_s).toFixed(1)} раза быстрее реального времени` : "";
+  $("#rv-h-meta").textContent = `Запись ${j.video_s ? hms(j.video_s) : "—"} · профиль «${j.preset_title}»${speed} · ${j.items} роликов вместо полной записи`;
+  const running = j.status === "running" || j.status === "queued";
+  $("#rv-progress").hidden = !running;
+  $("#rv-bar").style.width = Math.round((j.progress || 0) * 100) + "%";
+  $("#rv-ptext").textContent = running ? `обработано ${Math.round((j.progress || 0) * 100)}% · ролики появляются по ходу` : "";
+}
+async function loadItems(keep) {
+  const curId = RV.items[RV.cur]?.id;
+  RV.items = await api(`/api/review/jobs/${encodeURIComponent(RV.job)}/items`);
+  const cats = {};
+  RV.items.forEach((i) => { (cats[i.title] ||= { n: 0, sev: i.severity }).n++; });
+  $("#rv-cats").innerHTML = `<button type="button" class="cat" data-cat="" aria-pressed="${!RV.cat}">Все <b>${RV.items.length}</b></button>` +
+    Object.entries(cats).sort((a, b) => b[1].n - a[1].n).map(([t, c]) => `<button type="button" class="cat" data-cat="${esc(t)}" aria-pressed="${RV.cat === t}"><span class="dot" style="background:${CAT_COLOR[c.sev]}"></span>${esc(t)} <b>${c.n}</b></button>`).join("");
+  $("#rv-people").innerHTML = [...new Set(RV.items.map((i) => i.person).filter(Boolean))].map((p) => `<option value="${esc(p)}">`).join("");
+  renderList();
+  const idx = keep && curId ? visibleItems().findIndex((i) => i.id === curId) : 0;
+  showItem(Math.max(0, idx), keep);
+}
+function visibleItems() { return RV.items.filter((i) => (!RV.cat || i.title === RV.cat) && (!RV.verdict || i.verdict === RV.verdict)); }
+function renderList() {
+  const items = visibleItems();
+  $("#rv-list").innerHTML = items.map((i, k) => `<li data-k="${k}" class="v-${esc(i.verdict)} ${k === RV.cur ? "cur" : ""}">
+    <span class="n">${k + 1}</span><img src="${esc(i.snapshot)}" alt="" loading="lazy">
+    <div><div class="t">${esc(i.title)}</div><div class="m">${hms(i.start_s)} · ${Math.round(i.end_s - i.start_s)} с · ${Math.round(i.score * 100)}%</div>
+    <div class="m">${sevPill(i.severity)} ${i.verdict === "confirmed" ? "✓ подтверждено" : i.verdict === "rejected" ? "✕ ложное" : ""}${i.person ? " · " + esc(i.person) : ""}</div></div></li>`).join("")
+    || `<li class="empty">${RV.items.length ? "Под фильтр ничего не попало." : "Нарушений пока не найдено."}</li>`;
+}
+$("#rv-list").addEventListener("click", (e) => { const li = e.target.closest("li[data-k]"); if (li) showItem(+li.dataset.k); });
+$("#rv-cats").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (!b) return; RV.cat = b.dataset.cat; document.querySelectorAll("#rv-cats .cat").forEach((c) => c.setAttribute("aria-pressed", String(c === b))); renderList(); showItem(0); });
+$("#rv-verdicts").addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (!b) return; RV.verdict = b.dataset.v; document.querySelectorAll("#rv-verdicts button").forEach((c) => c.setAttribute("aria-pressed", String(c === b))); renderList(); showItem(0); });
+function showItem(k, keepVideo) {
+  const items = visibleItems();
+  if (!items.length) { $("#rv-video").removeAttribute("src"); $("#rv-i-title").textContent = ""; $("#rv-i-time").textContent = ""; $("#rv-pos").textContent = ""; return; }
+  RV.cur = Math.min(Math.max(0, k), items.length - 1);
+  const i = items[RV.cur];
+  document.querySelectorAll("#rv-list li").forEach((li) => li.classList.toggle("cur", +li.dataset.k === RV.cur));
+  $(`#rv-list li[data-k="${RV.cur}"]`)?.scrollIntoView({ block: "nearest" });
+  const v = $("#rv-video");
+  if (!keepVideo || !v.src.endsWith(i.clip)) { v.src = i.clip; v.play().catch(() => {}); }
+  $("#rv-sev").outerHTML = `<span class="pill ${esc(i.severity)}" id="rv-sev">${esc(SEV[i.severity])}</span>`;
+  $("#rv-verdict").outerHTML = `<span class="pill ${i.verdict === "confirmed" ? "ok" : i.verdict === "rejected" ? "st-false" : "st-new"}" id="rv-verdict">${i.verdict === "confirmed" ? "подтверждено" : i.verdict === "rejected" ? "ложное" : "не проверено"}</span>`;
+  $("#rv-pos").textContent = `${RV.cur + 1} из ${items.length}`;
+  $("#rv-i-title").textContent = i.title;
+  const det = Object.entries(i.details || {}).map(([a, b]) => `${DETAIL[a] || a}: ${DETAIL[b] || b}`).join(", ");
+  $("#rv-i-time").textContent = `${hms(i.start_s)} – ${hms(i.end_s)} в записи · ${Math.round(i.end_s - i.start_s)} с${det ? " · " + det : ""}`;
+  $("#rv-conf").style.width = Math.round(i.score * 100) + "%";
+  $("#rv-conf-v").textContent = Math.round(i.score * 100) + "%";
+  $("#rv-person").value = i.person || "";
+}
+async function verdict(v) {
+  const items = visibleItems(), i = items[RV.cur];
+  if (!i) return;
+  const upd = await api(`/api/review/items/${encodeURIComponent(i.id)}`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict: v, person: $("#rv-person").value }) });
+  Object.assign(i, upd);
+  const next = RV.verdict ? RV.cur : RV.cur + 1;
+  renderList(); showItem(next);
+  refreshJobs();
+}
+$("#rv-ok").addEventListener("click", () => verdict("confirmed"));
+$("#rv-no").addEventListener("click", () => verdict("rejected"));
+$("#rv-prev").addEventListener("click", () => showItem(RV.cur - 1));
+$("#rv-next").addEventListener("click", () => showItem(RV.cur + 1));
+document.addEventListener("keydown", (e) => {
+  if (state.view !== "review" || !RV.job || e.target.matches("input, select, textarea") || !$("#modal").hidden) return;
+  const k = e.key.toLowerCase();
+  if (k === "a" || k === "ф") { e.preventDefault(); verdict("confirmed"); }
+  else if (k === "x" || k === "ч") { e.preventDefault(); verdict("rejected"); }
+  else if (k === "arrowdown" || k === "j") { e.preventDefault(); showItem(RV.cur + 1); }
+  else if (k === "arrowup" || k === "k") { e.preventDefault(); showItem(RV.cur - 1); }
+});
+$("#rv-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  let source = $("#rv-source").value;
+  const file = $("#rv-file").files[0];
+  try {
+    if (file) {
+      $("#rv-msg").textContent = `Загружаю ${file.name} (${Math.round(file.size / 1e6)} МБ)…`;
+      const up = await fetch(`/api/review/upload?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file }).then((r) => r.json());
+      source = up.path;
+    }
+    const { id } = await api("/api/review/jobs", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, preset: $("#rv-preset").value, title: $("#rv-title").value || null }) });
+    $("#rv-msg").textContent = "Разбор запущен. Ролики появятся по ходу обработки.";
+    $("#rv-file").value = "";
+    await refreshJobs(); selectJob(id); loadReview();
+  } catch (err) {
+    $("#rv-msg").textContent = "Не получилось запустить разбор. Проверьте файл и попробуйте ещё раз.";
+  }
 });
 
 /* ---------- LinQ ---------- */

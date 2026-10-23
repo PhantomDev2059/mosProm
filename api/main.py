@@ -12,7 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import yaml
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from engine.config import CONFIRM_DEFAULT, SEVERITY_DEFAULT, load_cameras, parse_camera
 from engine.rules import RULES
 
+from .review import PRESETS, ReviewManager
 from .store import STATUSES, EventStore
 from .workers import SourceProcessor, VideoWorker, load_detectors
 
@@ -291,6 +292,90 @@ def metrics():
     return {"models": [d.stats() for d in detectors.values()],
             "cameras": [p.stats() for p in processors.values()],
             "gpu_backend": next(iter(detectors.values())).backend.name if detectors else None}
+
+
+# ---------- разбор смены ----------
+review = ReviewManager(DATA / "review.db", MEDIA, DATA / "videos", DATA / "uploads", detectors)
+
+
+@app.get("/api/review/presets")
+def review_presets():
+    return [{"id": k, "title": v["title"], "rules": v["rules"]} for k, v in PRESETS.items()]
+
+
+@app.get("/api/review/sources")
+def review_sources():
+    return review.sources()
+
+
+@app.post("/api/review/upload")
+async def review_upload(request: Request, name: str):
+    """Загрузка записи сырым потоком (без multipart): ?name=имя_файла.mp4."""
+    safe = "".join(c for c in Path(name).stem if c.isalnum() or c in "-_ ").strip() or "upload"
+    path = review.uploads / f"{safe[:60]}-{int(time.time())}.mp4"
+    with path.open("wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+    return {"path": str(path), "name": path.name, "size_mb": round(path.stat().st_size / 1e6, 1)}
+
+
+class ReviewIn(BaseModel):
+    source: str
+    preset: str = "universal"
+    title: str | None = None
+
+
+@app.post("/api/review/jobs")
+def review_start(body: ReviewIn):
+    try:
+        return {"id": review.start(body.source, body.preset, body.title)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/review/jobs")
+def review_jobs():
+    return review.jobs_list()
+
+
+@app.get("/api/review/jobs/{job_id}/items")
+def review_items(job_id: str):
+    return review.items(job_id)
+
+
+class VerdictIn(BaseModel):
+    verdict: str | None = None
+    person: str | None = None
+    note: str | None = None
+
+
+@app.post("/api/review/items/{item_id}")
+def review_verdict(item_id: str, body: VerdictIn):
+    try:
+        item = review.set_verdict(item_id, body.verdict, body.person, body.note)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if item is None:
+        raise HTTPException(404, "нет такого ролика")
+    return item
+
+
+@app.get("/api/review/jobs/{job_id}/report.csv")
+def review_csv(job_id: str):
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["время в записи", "нарушение", "уровень", "длительность, с", "уверенность", "решение", "сотрудник", "комментарий", "ролик"])
+    for r in review.items(job_id):
+        w.writerow([_hms(r["start_s"]), r["title"], r["severity"], round(r["end_s"] - r["start_s"], 1), r["score"],
+                    {"confirmed": "подтверждено", "rejected": "отклонено"}.get(r["verdict"], "не проверено"),
+                    r["person"] or "", r["note"] or "", r["clip"]])
+    return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename=shift-{job_id}.csv"})
+
+
+def _hms(s: float) -> str:
+    s = int(s)
+    return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d}"
 
 
 @app.get("/api/linq")
