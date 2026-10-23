@@ -209,6 +209,70 @@ def stats(hours: float = 24 * 7):
     return store.stats(time.time() - hours * 3600)
 
 
+RECOMMEND = {
+    "no_vest": "провести инструктаж по сигнальным жилетам и проверить выдачу СИЗ",
+    "no_helmet": "провести инструктаж по каскам и поставить контроль на входе в зону",
+    "vehicle_proximity": "разделить пешеходные и транспортные потоки, разметить проезды",
+    "running": "проверить, не торопят ли людей сроки, разметить безопасные маршруты",
+    "phone": "ввести правило «без телефона в рабочей зоне», оборудовать места для звонков",
+    "smoking": "напомнить о местах для курения, проверить знаки",
+    "open_fire": "проверить наряды-допуски на огневые работы",
+    "smoke": "проверить вентиляцию и источники дыма",
+    "fall": "проверить покрытие пола, освещение и уборку на участке",
+    "immobile": "отработать с диспетчером порядок вызова медпункта",
+    "zone_intrusion": "проверить ограждения и знаки опасной зоны",
+}
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    n10, n100 = n % 10, n % 100
+    word = one if n10 == 1 and n100 != 11 else few if 2 <= n10 <= 4 and not 12 <= n100 <= 14 else many
+    return f"{n} {word}"
+
+
+@app.get("/api/summary")
+def summary(hours: float = 12):
+    """Сводка смены текстом по журналу: без языковой модели, только факты и правила рекомендаций."""
+    since = time.time() - hours * 3600
+    rows = store.query(since=since, limit=100000)
+    if not rows:
+        return {"text": "За выбранный период нарушений не зафиксировано."}
+    s = store.stats(since)
+    t0 = time.strftime("%d.%m %H:%M", time.localtime(min(r["started_at"] for r in rows)))
+    t1 = time.strftime("%d.%m %H:%M", time.localtime(max(r["started_at"] for r in rows)))
+    sev = s["by_severity"]
+    lines = [f"Период: {t0} — {t1}. Зафиксировано {plural(s['total'], 'нарушение', 'нарушения', 'нарушений')}: "
+             f"критичных {sev.get('critical', 0)}, высокого уровня {sev.get('high', 0)}, среднего {sev.get('medium', 0)}."]
+    by_type: dict[str, int] = {}
+    for r in rows:
+        by_type[r["type"]] = by_type.get(r["type"], 0) + 1
+    top = sorted(by_type.items(), key=lambda kv: -kv[1])[:3]
+    titles = {r["type"]: r["title"] for r in rows}
+    lines.append("Чаще всего: " + "; ".join(f"{titles[t]} — {n} ({round(100 * n / s['total'])}%)" for t, n in top) + ".")
+    cam, cam_n = max(s["by_camera"].items(), key=lambda kv: kv[1])
+    cam_types: dict[str, int] = {}
+    for r in rows:
+        if r["camera_title"] == cam:
+            cam_types[r["title"]] = cam_types.get(r["title"], 0) + 1
+    lines.append(f"Самый проблемный участок: {cam} — {plural(cam_n, 'нарушение', 'нарушения', 'нарушений')}, "
+                 f"в основном «{max(cam_types, key=cam_types.get)}».")
+    hours_count = [sum(day[h] for day in s["heat"]) for h in range(24)]
+    peak = max(range(24), key=lambda h: hours_count[h])
+    lines.append(f"Пик нарушений: {peak:02d}:00–{(peak + 1) % 24:02d}:00.")
+    if s["latency_p50"] is not None:
+        lines.append(f"Медианное время от начала нарушения до оповещения: {s['latency_p50']:.1f} с.")
+    unmarked = s["by_status"].get("new", 0)
+    marked = s["total"] - unmarked
+    lines.append(f"Отмечено оператором {marked} из {s['total']}"
+                 + (f", точность по отметкам {round(s['precision'] * 100)}%." if s["precision"] is not None else "."))
+    recs = [f"по «{titles[t]}»: {RECOMMEND[t]}" for t, _ in top if t in RECOMMEND]
+    if unmarked > s["total"] / 2:
+        recs.append(f"разобрать {plural(unmarked, 'событие', 'события', 'событий')} без отметки, "
+                    "чтобы система точнее настроила пороги")
+    lines.append("Рекомендации: " + "; ".join(recs) + ".")
+    return {"text": "\n".join(lines)}
+
+
 @app.get("/api/metrics")
 def metrics():
     return {"models": [d.stats() for d in detectors.values()],

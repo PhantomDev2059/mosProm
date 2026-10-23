@@ -218,6 +218,7 @@ function bars(el, obj, color) {
     : `<div class="muted small">Нет данных за период.</div>`;
 }
 async function loadAnalytics() {
+  loadSummary();
   const s = await api("/api/stats?hours=" + $("#an-hours").value);
   const crit = s.by_severity.critical || 0;
   $("#kpis").innerHTML = `
@@ -237,6 +238,17 @@ async function loadAnalytics() {
   $("#ch-heat").innerHTML = html;
 }
 $("#an-hours").addEventListener("change", loadAnalytics);
+async function loadSummary() {
+  const s = await api("/api/summary?hours=" + $("#sum-hours").value);
+  $("#summary").innerHTML = s.text.split("\n").map((l) => `<p>${esc(l)}</p>`).join("");
+}
+$("#sum-hours").addEventListener("change", loadSummary);
+$("#sum-copy").addEventListener("click", async (e) => {
+  const text = $("#summary").innerText;
+  try { await navigator.clipboard.writeText(text); e.target.textContent = "Скопировано"; }
+  catch { const r = document.createRange(); r.selectNodeContents($("#summary")); getSelection().removeAllRanges(); getSelection().addRange(r); e.target.textContent = "Выделено"; }
+  setTimeout(() => { e.target.textContent = "Скопировать"; }, 1500);
+});
 
 /* ---------- модалка события ---------- */
 function openModal(id) {
@@ -244,10 +256,23 @@ function openModal(id) {
   if (!ev) return;
   $("#modal").dataset.id = id;
   fillModal(ev);
+  setMedia("img");
   $("#modal").hidden = false;
 }
+function setMedia(kind) {
+  const ev = state.events.get($("#modal").dataset.id);
+  const video = kind === "video" && ev?.clip;
+  $("#m-img").hidden = !!video;
+  $("#m-video").hidden = !video;
+  if (video) { if (!$("#m-video").src.endsWith(ev.clip)) $("#m-video").src = ev.clip; $("#m-video").play().catch(() => {}); }
+  else $("#m-video").pause();
+  document.querySelectorAll("[data-media]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.media === (video ? "video" : "img"))));
+}
+document.querySelectorAll("[data-media]").forEach((b) => b.addEventListener("click", () => setMedia(b.dataset.media)));
 function fillModal(ev) {
   $("#m-img").src = ev.snapshot + "?v=" + Math.round(ev.duration_s);
+  $("#m-video-btn").disabled = !ev.clip;
+  $("#m-video-btn").title = ev.clip ? "" : "Фрагмент пишется: он появится через несколько секунд после тревоги";
   $("#m-sev").outerHTML = `<span class="pill ${esc(ev.severity)}" id="m-sev">${esc(SEV[ev.severity] || ev.severity)}</span>`;
   $("#m-status").outerHTML = `<span class="pill st-${esc(ev.status)}" id="m-status">${esc(ST[ev.status] || ev.status)}</span>`;
   $("#m-title").textContent = ev.title;
@@ -258,7 +283,7 @@ function fillModal(ev) {
     ${det ? `<dt>Детали</dt><dd>${esc(det)}</dd>` : ""}<dt>ID</dt><dd class="mono">${esc(ev.id)} · трек #${ev.track_id}</dd>`;
   $("#m-hist").innerHTML = (ev.history || []).map((h) => `<li>${fmtTime(h.at, true)} — ${esc(ST[h.status] || h.status)} (${esc(h.who)})</li>`).join("");
 }
-function closeModal() { $("#modal").hidden = true; }
+function closeModal() { $("#modal").hidden = true; $("#m-video").pause(); }
 $("#modal-x").addEventListener("click", closeModal);
 $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });

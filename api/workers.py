@@ -1,5 +1,6 @@
 """Обработка источников: видеофайлы и RTSP в отдельных потоках, вебкамера браузера — по кадру."""
 import json
+import subprocess
 import threading
 import time
 from collections import deque
@@ -18,6 +19,9 @@ from engine.pipeline import CameraPipeline, FrameResult
 from engine.render import draw
 
 from .store import EventStore
+
+CLIP_PRE_S = 4.0       # секунд до подтверждения нарушения во фрагменте
+CLIP_POST_S = 4.0      # и после
 
 
 def load_detectors(registry_path: Path) -> dict[str, Detector]:
@@ -51,6 +55,8 @@ class SourceProcessor:
         self._fps_t = time.time()
         self._fps_n = 0
         self._last_update_pub: dict[str, float] = {}
+        self._ring: deque = deque(maxlen=max(1, int(cfg.analysis_fps * CLIP_PRE_S)))
+        self._clips: dict[str, dict] = {}
         self._clock_offset = time.time()
 
     def rebuild(self, cfg: CameraConfig) -> None:
@@ -83,6 +89,7 @@ class SourceProcessor:
         small = cv2.resize(annotated, (640, round(annotated.shape[0] * 640 / annotated.shape[1])))
         ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 72])
         self.latest_preview = buf.tobytes() if ok else self.latest_preview
+        self._feed_clips(self.latest_preview, now)
         self.latest_raw = frame
         self.proc_ms.append((time.perf_counter() - t0) * 1e3)
         self.frames += 1
@@ -109,6 +116,7 @@ class SourceProcessor:
                     "history": [{"status": "new", "at": time.time(), "who": "система"}], "closed": 0,
                 })
                 self.publish({"kind": "event_open", "event": self.store.get(ev.id)})
+                self._clips[ev.id] = {"frames": list(self._ring), "until": now + CLIP_POST_S}
             else:
                 last = self._last_update_pub.get(ev.id, 0)
                 if time.time() - last < 1.0:
@@ -119,6 +127,27 @@ class SourceProcessor:
                 self._snapshot(frame, res, ev)
                 self.store.update(ev.id, duration_s=ev.duration_s, score=ev.score, details=ev.details, closed=0)
                 self.publish({"kind": "event_update", "event": self.store.get(ev.id)})
+
+    def _feed_clips(self, jpg: bytes, now: float) -> None:
+        """Кольцевой буфер последних секунд и запись фрагментов вокруг момента тревоги."""
+        self._ring.append(jpg)
+        for eid, clip in list(self._clips.items()):
+            clip["frames"].append(jpg)
+            if now >= clip["until"]:
+                del self._clips[eid]
+                threading.Thread(target=self._write_clip, args=(eid, clip["frames"]), daemon=True).start()
+
+    def _write_clip(self, eid: str, frames: list[bytes]) -> None:
+        name = f"{eid}.mp4"
+        fps = str(max(1, round(self.cfg.analysis_fps)))
+        proc = subprocess.run(
+            ["ffmpeg", "-loglevel", "error", "-y", "-f", "image2pipe", "-framerate", fps, "-i", "-",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+             "-movflags", "+faststart", str(self.media / name)],
+            input=b"".join(frames), capture_output=True)
+        if proc.returncode == 0:
+            self.store.update(eid, clip=f"/media/{name}")
+            self.publish({"kind": "event_update", "event": self.store.get(eid)})
 
     def _snapshot(self, frame: np.ndarray, res: FrameResult, ev: Event) -> str:
         img = draw(frame, self.cfg.scene, res, highlight_track=ev.track_id)

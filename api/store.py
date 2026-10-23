@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS events (
     camera TEXT, camera_title TEXT, zone TEXT, zone_title TEXT,
     type TEXT, title TEXT, severity TEXT, track_id INTEGER,
     started_at REAL, confirmed_at REAL, duration_s REAL, latency_s REAL,
-    score REAL, details TEXT, snapshot TEXT,
+    score REAL, details TEXT, snapshot TEXT, clip TEXT,
     status TEXT DEFAULT 'new', history TEXT DEFAULT '[]', closed INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS events_time ON events(started_at);
@@ -26,6 +26,9 @@ class EventStore:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(events)")}
+        if "clip" not in cols:                       # журнал старой версии
+            self.db.execute("ALTER TABLE events ADD COLUMN clip TEXT")
         self.lock = threading.Lock()
 
     def insert(self, row: dict) -> None:
