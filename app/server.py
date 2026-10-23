@@ -77,12 +77,34 @@ def detect_cpu(jpeg, conf, models):
                        'post_ms': round((t3 - t2) * 1000, 1), 'roundtrip_ms': round((t3 - t0) * 1000, 1)}}
 
 
+# квантование под TPU роняет уверенность мелких классов: телефон у уха на CPU 0.23, на TPU 0.11.
+# Для них свой порог, но засчитываем только внутри рамки человека (телефон в руке / у уха)
+CLASS_CONF = {'cell phone': 0.08}
+
+
 def submit(jpeg, mode, conf, pose=True):
     models = models_for(pose)
+    floor = min([conf, *CLASS_CONF.values()])  # от модели берём всё выше минимального порога, фильтруем здесь
     if mode == 'cpu':
-        return cpu_pool.submit(detect_cpu, jpeg, conf, models)
+        return cpu_pool.submit(detect_cpu, jpeg, floor, models)
     # pika не кодирует float в AMQP-заголовках — передаём строкой, relay делает float()
-    return relay.submit(jpeg, model=','.join(models), conf=str(conf))
+    return relay.submit(jpeg, model=','.join(models), conf=str(floor))
+
+
+def _center_in(box, outer):
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    return outer[0] <= cx <= outer[2] and outer[1] <= cy <= outer[3]
+
+
+def apply_thresholds(dets, conf):
+    people = [d['box'] for d in dets if d['name'] == 'person' and d['conf'] >= conf]
+    kept = [d for d in dets if d['conf'] >= conf]
+    for d in sorted(dets, key=lambda d: -d['conf']):
+        if conf > d['conf'] >= CLASS_CONF.get(d['name'], 1.0) and any(_center_in(d['box'], p) for p in people) \
+                and not any(k['name'] == d['name'] and (_center_in(d['box'], k['box']) or _center_in(k['box'], d['box']))
+                            for k in kept):
+            kept.append(d)
+    return kept
 
 
 VEHICLES = {'car', 'truck', 'bus', 'motorcycle', 'train', 'bicycle'}
@@ -186,6 +208,7 @@ async def detect(file: UploadFile = File(...), mode: str = 'tpu', conf: float = 
         raise HTTPException(502, f'{type(e).__name__}: {e}')
     if 'error' in res:
         raise HTTPException(502, res['error'])
+    res['detections'] = apply_thresholds(res['detections'], conf)
     for d in res['detections']:
         d['box'] = [round(v / scale, 1) for v in d['box']]
     res['events'] = rules(res['detections'])
@@ -458,6 +481,7 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25, pos
                 res = fut.result(timeout=60)
                 if 'error' in res:
                     raise RuntimeError(res['error'])
+                res['detections'] = apply_thresholds(res['detections'], conf)
             except Exception as e:
                 stats['errors'] += 1
                 stats['last_error'] = str(e)
