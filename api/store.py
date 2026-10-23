@@ -30,6 +30,9 @@ class EventStore:
         for col in ("clip", "box"):                  # журнал старой версии
             if col not in cols:
                 self.db.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
+        # события, оставшиеся «открытыми» после остановки сервиса, уже никто не закроет
+        self.db.execute("UPDATE events SET closed = 1 WHERE closed = 0")
+        self.db.commit()
         self.lock = threading.Lock()
 
     def insert(self, row: dict) -> None:

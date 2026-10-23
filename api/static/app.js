@@ -113,16 +113,18 @@ async function loadCameras() {
   const cams = state.cameras.filter((c) => c.source !== "webcam");
   const box = $("#cams");
   if (box.children.length !== cams.length) {
-    box.innerHTML = cams.map((c) => `<div class="cam" id="cam-${esc(c.id)}" data-cam="${esc(c.id)}" title="Нажмите, чтобы развернуть">
+    box.innerHTML = cams.map((c, i) => `<div class="cam" id="cam-${esc(c.id)}" data-cam="${esc(c.id)}" title="Нажмите, чтобы развернуть">
       <img data-frame="${esc(c.id)}" alt="Камера ${esc(c.title)}">
-      <div class="cam-h"><b>${esc(c.title)}</b><span class="cam-meta"><span class="pill mono" data-fps></span><span data-act></span></span></div></div>`).join("");
+      <div class="cam-top"><span class="cam-no">К-${String(i + 1).padStart(2, "0")}</span><b>${esc(c.title)}</b>
+        <span class="cam-rec"><i></i>REC <span data-clock></span></span></div>
+      <div class="cam-bottom"><span data-act></span><span class="cam-fps mono" data-fps></span></div></div>`).join("");
   }
   cams.forEach((c) => {
     const el = $("#cam-" + CSS.escape(c.id));
     if (!el) return;
-    el.querySelector("[data-fps]").textContent = `${c.stats.fps} к/с`;
-    el.querySelector("[data-act]").innerHTML = c.stats.active ? `<span class="pill high">${c.stats.active} актив.</span>` : "";
+    el.querySelector("[data-fps]").textContent = `${c.stats.fps} к/с · ${c.models.join(" + ")}`;
   });
+  $("#sit-cams").textContent = cams.filter((c) => c.stats.fps > 0).length + " из " + cams.length;
   renderCamAlarms();
   const m = await api("/api/metrics");
   $("#st-backend").textContent = m.gpu_backend === "linq-tpu" ? "LinQ TPU" : (m.gpu_backend || "").replace("onnx-", "ONNX · ").toUpperCase();
@@ -159,9 +161,36 @@ $("#cams").addEventListener("click", (e) => {
   sendFrameWant();
 });
 function renderCamAlarms() {
-  const crit = new Set([...state.events.values()].filter((e) => !e.closed && e.severity === "critical").map((e) => e.camera));
-  document.querySelectorAll(".cam").forEach((el) => el.classList.toggle("alarm", crit.has(el.id.slice(4))));
+  const all = [...state.events.values()];
+  const active = all.filter((e) => !e.closed);
+  const crit = new Set(active.filter((e) => e.severity === "critical").map((e) => e.camera));
+  document.querySelectorAll(".cam").forEach((el) => {
+    const cam = el.dataset.cam;
+    el.classList.toggle("alarm", crit.has(cam));
+    const mine = active.filter((e) => e.camera === cam);
+    const byTitle = {};
+    mine.forEach((e) => { (byTitle[e.title] ||= { n: 0, sev: e.severity }).n++; });
+    el.querySelector("[data-act]").innerHTML = Object.entries(byTitle)
+      .map(([t, v]) => `<span class="pill ${esc(v.sev)}">${esc(t)}${v.n > 1 ? " ×" + v.n : ""}</span>`).join("");
+  });
+  $("#sit-active").textContent = active.filter((e) => e.camera !== "webcam").length;
+  $("#sit-crit").textContent = active.filter((e) => e.severity === "critical" && e.camera !== "webcam").length;
+  $("#sit-crit").closest(".sit").classList.toggle("on", crit.size > 0);
+  const since = Date.now() / 1000 - 12 * 3600;
+  $("#sit-shift").textContent = all.filter((e) => e.started_at >= since && e.camera !== "webcam").length;
+  const last = all.filter((e) => e.severity === "critical" && e.camera !== "webcam").sort((a, b) => b.started_at - a.started_at)[0];
+  const btn = $("#sit-last");
+  btn.hidden = !last;
+  if (last) {
+    btn.dataset.id = last.id;
+    btn.innerHTML = `<span class="pill critical">последнее критичное</span><b>${esc(last.title)}</b><span class="muted">${esc(last.camera_title)} · ${fmtTime(last.started_at)}</span>`;
+  }
 }
+$("#sit-last").addEventListener("click", (e) => openModal(e.currentTarget.dataset.id));
+setInterval(() => {
+  const t = new Date().toLocaleTimeString("ru-RU");
+  document.querySelectorAll(".cam [data-clock]").forEach((el) => { el.textContent = t; });
+}, 1000);
 
 /* ---------- фильтры галереи и журнала ---------- */
 function filtersHTML(prefix) {
@@ -592,6 +621,22 @@ async function loadLinq() {
   const ms = (o, k) => (o && o[k] != null ? o[k] : "—");
   $("#lq-models").innerHTML = m.models.map((d) => `<tr><td>${esc(d.model)}</td><td class="mono">${esc(d.backend)}</td>
     <td class="num">${ms(d.pre, "p50")}</td><td class="num">${ms(d.infer, "p50")}</td><td class="num">${ms(d.infer, "p95")}</td><td class="num">${ms(d.post, "p50")}</td></tr>`).join("");
+  const b = await api("/api/bench");
+  const names = [...new Set(Object.values(b).flatMap((x) => Object.keys(x.models || {})))];
+  const cell = (plat, n) => {
+    const m = b[plat]?.models?.[n];
+    if (!m || m.error) return `<td class="num muted">—</td><td class="num muted">—</td>`;
+    const fps = m.fps_by_threads ? Math.max(...Object.values(m.fps_by_threads)) : null;
+    return `<td class="num">${m.p50_ms}</td><td class="num">${fps ?? "—"}</td>`;
+  };
+  $("#lq-bench").innerHTML = names.map((n) => `<tr><td>${esc(n)}</td>${cell("tpu", n)}${cell("cuda", n)}${cell("cpu", n)}</tr>`).join("")
+    || `<tr><td colspan="7" class="empty">Замеров ещё нет.</td></tr>`;
+  $("#lq-bench-note").textContent = [
+    b.tpu ? `LinQ: ${b.tpu.at}` : "LinQ TPU: замер на стенде после подключения VPN.",
+    b.cuda ? `GPU: ${b.cuda.device || "CUDA"}, ${b.cuda.at}` : "",
+    b.cpu ? `CPU: ${b.cpu.host}, ${b.cpu.at}` : "",
+    "Задержка — p50 одного кадра; кадров/с — лучшая пропускная способность при 1–4 параллельных потоках. GPU и CPU мерились на том же сервере, что обслуживает живые камеры, — цифры немного занижены.",
+  ].filter(Boolean).join(" · ");
   const progs = await api("/api/linq");
   $("#lq-programs").innerHTML = progs.length ? progs.map((p) => `<tr><td>${esc(p.name)}</td><td class="num">${p.head_nodes ?? "—"}</td>
     <td class="num">${p.tail_nodes ?? "—"}</td><td class="num">${p.calib_frames ?? "—"}</td>

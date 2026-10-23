@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=3">
+<link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
 <header class="top">
@@ -33,6 +33,13 @@
 <main>
   <!-- МОНИТОРИНГ -->
   <section class="view" id="view-monitor">
+    <div class="situation" id="situation" aria-live="polite">
+      <div class="sit"><b id="sit-active">0</b><span>нарушений сейчас</span></div>
+      <div class="sit crit"><b id="sit-crit">0</b><span>из них критичных</span></div>
+      <div class="sit"><b id="sit-shift">0</b><span>за последние 12 часов</span></div>
+      <div class="sit"><b id="sit-cams">0</b><span>камер в работе</span></div>
+      <button type="button" class="sit-last" id="sit-last" hidden></button>
+    </div>
     <div class="monitor">
       <div class="cams" id="cams"></div>
       <aside class="feed-panel">
@@ -184,6 +191,15 @@
         <div class="table-wrap"><table><thead><tr><th>Модель</th><th>Бэкенд</th><th class="num">Пре p50</th><th class="num">Инференс p50</th><th class="num">Инференс p95</th><th class="num">Пост p50</th></tr></thead><tbody id="lq-models"></tbody></table></div>
       </div>
       <div class="card wide">
+        <h3>Сравнение платформ: одна модель, один кадр 640×640</h3>
+        <div class="table-wrap"><table><thead><tr><th>Модель</th>
+          <th class="num">LinQ TPU, мс</th><th class="num">LinQ TPU, к/с</th>
+          <th class="num">GPU, мс</th><th class="num">GPU, к/с</th>
+          <th class="num">CPU, мс</th><th class="num">CPU, к/с</th></tr></thead>
+        <tbody id="lq-bench"></tbody></table></div>
+        <p class="muted small" id="lq-bench-note"></p>
+      </div>
+      <div class="card wide">
         <h3>Камеры: темп обработки</h3>
         <div class="table-wrap"><table><thead><tr><th>Камера</th><th class="num">Кадров/с</th><th class="num">Кадр p50, мс</th><th class="num">Кадр p95, мс</th><th class="num">Активных</th></tr></thead><tbody id="lq-cams"></tbody></table></div>
       </div>
@@ -224,6 +240,6 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

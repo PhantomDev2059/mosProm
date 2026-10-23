@@ -396,6 +396,19 @@ def linq_programs():
     return out
 
 
+@app.get("/api/bench")
+def bench():
+    """Замеры linq/bench.py по платформам: tpu (стенд LinQ), cuda, cpu."""
+    import json as _json
+    out = {}
+    for p in sorted((MODELS / "bench").glob("*.json")):
+        try:
+            out[p.stem] = _json.loads(p.read_text())
+        except ValueError:
+            continue
+    return out
+
+
 @app.websocket("/ws/events")
 async def ws_events(ws: WebSocket):
     await ws.accept()

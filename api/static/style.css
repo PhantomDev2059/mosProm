@@ -69,9 +69,28 @@ select,input[type=text],input[type=number]{background:var(--surface-2);border:1p
 .cam{cursor:zoom-in}
 .cam.big{grid-column:1/-1;cursor:zoom-out}
 .cam img{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000}
-.cam-h{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px}
-.cam-h b{font-weight:600}
-.cam-meta{display:flex;gap:6px;align-items:center}
+/* подписи поверх кадра, как на мониторах видеонаблюдения */
+.cam-top,.cam-bottom{position:absolute;left:0;right:0;display:flex;align-items:center;gap:8px;padding:8px 10px;pointer-events:none}
+.cam-top{top:0;background:linear-gradient(rgba(0,0,0,.72),rgba(0,0,0,0));color:#fff}
+.cam-bottom{bottom:0;justify-content:space-between;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.72));min-height:38px;align-items:flex-end}
+.cam-top b{font-weight:600;font-size:13.5px;text-shadow:0 1px 2px rgba(0,0,0,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cam-no{font:700 11px/1 var(--f-mono);background:var(--hazard);color:#111;padding:3px 5px;border-radius:2px;flex:none}
+.cam-rec{margin-left:auto;font:600 11px/1 var(--f-mono);display:flex;gap:5px;align-items:center;flex:none;font-variant-numeric:tabular-nums}
+.cam-rec i{width:8px;height:8px;border-radius:50%;background:var(--crit)}
+@media (prefers-reduced-motion:no-preference){.cam-rec i{animation:blink 1.6s steps(2,start) infinite}}
+@keyframes blink{to{visibility:hidden}}
+.cam-bottom [data-act]{display:flex;gap:5px;flex-wrap:wrap}
+.cam-fps{font-size:10.5px;color:rgba(255,255,255,.7);flex:none}
+/* строка обстановки */
+.situation{display:grid;grid-template-columns:repeat(4,minmax(0,150px)) minmax(0,1fr);gap:10px;margin-bottom:12px;align-items:stretch}
+.sit{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:grid;gap:2px}
+.sit b{font:800 30px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.sit span{font-size:12px;color:var(--muted)}
+.sit.crit.on{border-color:var(--crit);background:var(--crit-bg)}
+.sit.crit.on b{color:var(--crit)}
+.sit-last{display:grid;gap:3px;justify-items:start;align-content:center;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;cursor:pointer;color:var(--fg)}
+.sit-last:hover{border-color:var(--crit)}
+.sit-last b{font-weight:600}
 .feed-panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;position:sticky;top:70px;max-height:calc(100vh - 90px);display:flex;flex-direction:column;min-width:0}
 .feed{list-style:none;margin:0;padding:0;overflow:auto}
 .feed li{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);cursor:pointer}
@@ -231,6 +250,8 @@ td img{width:72px;aspect-ratio:16/10;object-fit:cover;border-radius:3px;display:
   .rv-player{position:static}
   .feed-panel{position:static;max-height:none}
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .situation{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sit-last{grid-column:1/-1}
   .charts{grid-template-columns:1fr}
   .modal-box{grid-template-columns:1fr}
 }
