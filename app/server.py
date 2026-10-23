@@ -83,12 +83,8 @@ def rules(dets):
     events = []
     if people and any(d['name'] == 'cell phone' for d in dets):
         events.append({'code': '03', 'title': 'Телефон в руках', 'level': 'warn'})
-    for p in people:
-        x1, y1, x2, y2 = p['box']
-        h = y2 - y1
-        if (x2 - x1) > 1.3 * h:
-            events.append({'code': '07', 'title': 'Человек лежит / падение?', 'level': 'critical'})
-            break
+    # 07 «лежит» по пропорциям рамки убрано: на веб-камере (голова и плечи крупно) давало ложные тревоги;
+    # падение будет по скелету из модели поз
     for p in people:
         px, py, ph = (p['box'][0] + p['box'][2]) / 2, p['box'][3], p['box'][3] - p['box'][1]
         for v in dets:
@@ -269,6 +265,14 @@ def sample_video(name: str):
     return register_video(uuid.uuid4().hex[:10], path, path.name)
 
 
+@app.post('/api/video/webcam')
+def webcam(index: int = 0):
+    vid = uuid.uuid4().hex[:10]
+    VIDEOS[vid] = (None, {'id': vid, 'name': 'Камера ноутбука (live)', 'webcam': index,
+                          'fps': 30, 'frames': 0, 'width': 1280, 'height': 720})
+    return VIDEOS[vid][1]
+
+
 def register_video(vid, path, name):
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
@@ -310,13 +314,29 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
                           'fps': 0.0, 'latency_ms': deque(maxlen=50), 'tpu_ms': deque(maxlen=50),
                           'classes': Counter(), 'events': deque(maxlen=30), 'last_error': None}
 
+    live = 'webcam' in info
+
+    def open_capture():
+        if not live:
+            return cv2.VideoCapture(str(path))
+        cap = cv2.VideoCapture(info['webcam'], cv2.CAP_DSHOW)  # DSHOW на Windows открывается за ~1 с, MSMF — до 10 с
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        return cap
+
     def gen():
-        cap = cv2.VideoCapture(str(path))
+        cap = open_capture()
+        if live and not cap.isOpened():
+            stats['last_error'] = 'камера не открылась (занята другим приложением?)'
+            stats['done'] = True
+            return
         step = max(1, round((info['fps'] or 25) / max(fps, 0.1)))
         inflight, done_times, idx, last_yield = deque(), deque(maxlen=20), 0, 0.0
         recent_events = {}
+        t_start, next_submit = time.perf_counter(), 0.0
 
-        def emit(frame, fut, frame_idx):
+        def emit(frame, fut, sec):
             nonlocal last_yield
             try:
                 res = fut.result(timeout=60)
@@ -336,7 +356,6 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
                 stats['tpu_ms'].append(t.get('tpu_ms', t.get('cpu_ms')))
             stats['processed'] += 1
             stats['classes'].update(d['name'] for d in res['detections'])
-            sec = frame_idx / (info['fps'] or 25)
             for ev in rules(res['detections']):
                 # одно длящееся нарушение -> одно событие: повтор того же кода в течение 5 с не пишем
                 if sec - recent_events.get(ev['code'], -1e9) > 5:
@@ -356,7 +375,7 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
 
         try:
             while STATS.get(vid, {}).get('run') == run:
-                if idx % step:
+                if not live and idx % step:
                     if not cap.grab():
                         break
                     idx += 1
@@ -364,12 +383,23 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
                 ok, frame = cap.read()
                 if not ok:
                     break
+                if live:
+                    # с камеры читаем всё подряд (иначе копится буфер и растёт задержка),
+                    # а на TPU отправляем не чаще fps кадров в секунду
+                    now = time.perf_counter()
+                    if now < next_submit:
+                        continue
+                    next_submit = now + 1.0 / max(fps, 0.1)
+                    frame = cv2.flip(frame, 1)  # зеркально, как в обычном видеозвонке
+                    sec = now - t_start
+                else:
+                    sec = idx / (info['fps'] or 25)
                 h, w = frame.shape[:2]
                 if max(h, w) > 960:
                     s = 960 / max(h, w)
                     frame = cv2.resize(frame, (round(w * s), round(h * s)))
                 jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
-                inflight.append((frame, submit(jpeg, mode, conf), idx))
+                inflight.append((frame, submit(jpeg, mode, conf), sec))
                 idx += 1
                 while len(inflight) >= MAX_INFLIGHT or (inflight and inflight[0][1].done()):
                     yield emit(*inflight.popleft())

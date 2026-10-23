@@ -108,7 +108,9 @@ function startVideo(info) {
   stopVideo(false);
   state.video = info;
   $('#videocard').hidden = false;
-  $('#vidtitle').textContent = `${info.name} · ${info.width}×${info.height}, ${info.fps} к/с, ${info.frames} кадров`;
+  $('#vidtitle').textContent = 'webcam' in info
+    ? `${info.name} · ${$('#fps').value} к/с на ${state.mode.toUpperCase()}`
+    : `${info.name} · ${info.width}×${info.height}, ${info.fps} к/с, ${info.frames} кадров`;
   $('#s_tpu_l').textContent = state.mode === 'tpu' ? 'мс на TPU (из relay)' : 'мс CPU-инференса';
   $('#s_events').innerHTML = '<li class="muted">пока нет</li>'; $('#s_classes').innerHTML = ''; $('#s_err').textContent = '';
   $('#vidstream').src = `/api/video/${info.id}/stream?mode=${state.mode}&fps=${$('#fps').value}&conf=${state.conf}&_=${Date.now()}`;
@@ -134,6 +136,7 @@ async function pollStats() {
   if (s.done) clearInterval(state.statsTimer);
 }
 $('#vidstop').onclick = () => stopVideo(false);
+$('#webcam').onclick = async () => startVideo(await (await fetch('/api/video/webcam', { method: 'POST' })).json());
 $('#vidrestart').onclick = () => state.video && startVideo(state.video);
 
 // ---------- примеры ----------

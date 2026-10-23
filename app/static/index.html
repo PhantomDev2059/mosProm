@@ -27,7 +27,7 @@
       <button data-mode="cpu">CPU (сравнение)</button>
     </div>
     <label>порог уверенности <input type="range" id="conf" min="0.1" max="0.9" step="0.05" value="0.3"> <b id="confv">0.30</b></label>
-    <label>кадров/с для видео <input type="number" id="fps" min="1" max="30" value="8"></label>
+    <label>кадров/с для видео <input type="number" id="fps" min="1" max="30" value="10"></label>
     <span class="hint" id="modelinfo"></span>
   </div>
 
@@ -46,6 +46,7 @@
         <input type="file" id="vidfile" accept="video/*" hidden>
         Перетащите видео (mp4/avi/mov) или <u>выберите файл</u>
       </label>
+      <button class="btn cam" id="webcam">📷 Камера ноутбука — live на TPU</button>
       <div class="samples" id="vidsamples"></div>
     </div>
   </div>
