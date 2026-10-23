@@ -1,0 +1,8 @@
+camera: cam-04-corridor
+title: АБК, коридор 1 этажа
+source: cam_corridor.mp4
+analysis_fps: 6
+models: [pose]
+rules:
+  - {type: fall}
+  - {type: immobile, still_s: 5}

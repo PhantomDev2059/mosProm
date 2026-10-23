@@ -1,0 +1,9 @@
+camera: cam-02-warehouse
+title: Склад, проезд погрузчиков
+source: cam_warehouse.mp4
+analysis_fps: 5
+models: [pose, ppe, forklift]
+rules:
+  - {type: vehicle_proximity, min_gap_heights: 0.4}
+  - {type: no_vest}
+  - {type: running}

@@ -1,0 +1,8 @@
+camera: cam-06-fire
+title: Открытая площадка, сварочный пост
+source: cam_fire.mp4
+analysis_fps: 5
+models: [fire, pose]
+rules:
+  - {type: open_fire}
+  - {type: smoke}

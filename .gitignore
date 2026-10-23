@@ -1,0 +1,26 @@
+# окружения и кэши
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+
+# данные, веса и артефакты — в репозиторий не кладём
+data/
+media/
+runs/
+calib/
+out/
+*.onnx
+*.pt
+*.tpu
+*.qm.onnx
+*.pt2
+*.mp4
+*.avi
+
+# доступы стенда — никогда не коммитим
+*.ovpn
+.env
+secrets*

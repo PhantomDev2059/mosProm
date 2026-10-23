@@ -1,0 +1,7 @@
+camera: cam-05-smoking
+title: Ворота №3, у склада ГСМ
+source: cam_smoking.mp4
+analysis_fps: 5
+models: [pose, cigarette]
+rules:
+  - {type: smoking}

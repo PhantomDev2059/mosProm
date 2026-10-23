@@ -1,0 +1,181 @@
+"""Обработка источников: видеофайлы и RTSP в отдельных потоках, вебкамера браузера — по кадру."""
+import json
+import threading
+import time
+from collections import deque
+from datetime import datetime
+from pathlib import Path
+from typing import Callable
+
+import cv2
+import numpy as np
+
+from engine.backends import OnnxBackend
+from engine.config import CameraConfig
+from engine.detector import Detector, ModelSpec
+from engine.events import Event, EventManager
+from engine.pipeline import CameraPipeline, FrameResult
+from engine.render import draw
+
+from .store import EventStore
+
+
+def load_detectors(registry_path: Path) -> dict[str, Detector]:
+    reg = json.loads(registry_path.read_text())
+    out = {}
+    for name, m in reg.items():
+        spec = ModelSpec(name=name, kind=m["kind"], path=m["path"], conf=m.get("conf", 0.4),
+                         class_map={int(k): v for k, v in m["class_map"].items()})
+        out[name] = Detector(spec, OnnxBackend(spec.path))
+    return out
+
+
+class SourceProcessor:
+    """Общее для всех источников: конвейер, снимки-доказательства, запись в журнал, оповещения."""
+
+    def __init__(self, cfg: CameraConfig, detectors: list[Detector], store: EventStore, media: Path,
+                 publish: Callable[[dict], None]):
+        self.cfg = cfg
+        self.store = store
+        self.media = media
+        self.publish = publish
+        self._pending: list[tuple[str, Event]] = []
+        self.events = EventManager(cfg.id, on_open=self._on_open, on_update=self._on_update, on_close=self._on_close)
+        self.pipeline = CameraPipeline(cfg, detectors, self.events)
+        self.latest_jpeg: bytes | None = None
+        self.latest_preview: bytes | None = None
+        self.latest_raw: np.ndarray | None = None
+        self.proc_ms: deque = deque(maxlen=120)
+        self.frames = 0
+        self.fps = 0.0
+        self._fps_t = time.time()
+        self._fps_n = 0
+        self._last_update_pub: dict[str, float] = {}
+        self._clock_offset = time.time()
+
+    def rebuild(self, cfg: CameraConfig) -> None:
+        detectors = self.pipeline.detectors
+        self.cfg = cfg
+        self.events = EventManager(cfg.id, on_open=self._on_open, on_update=self._on_update, on_close=self._on_close)
+        self.pipeline = CameraPipeline(cfg, detectors, self.events)
+
+    # колбэки менеджера событий вызываются внутри pipeline.process; кадр рисуем после него
+    def _on_open(self, ev: Event, det) -> None:
+        self._pending.append(("open", ev))
+
+    def _on_update(self, ev: Event, det) -> None:
+        self._pending.append(("update", ev))
+
+    def _on_close(self, ev: Event) -> None:
+        self.store.update(ev.id, duration_s=ev.duration_s, closed=1, score=ev.score)
+        self.publish({"kind": "event_close", "event": self.store.get(ev.id)})
+
+    def _wall(self, t: float) -> float:
+        return self._clock_offset + t
+
+    def process(self, frame: np.ndarray, now: float) -> bytes:
+        t0 = time.perf_counter()
+        res = self.pipeline.process(frame, now, datetime.now())
+        annotated = draw(frame, self.cfg.scene, res)
+        self._flush_pending(frame, res, now)
+        ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        self.latest_jpeg = buf.tobytes() if ok else self.latest_jpeg
+        small = cv2.resize(annotated, (640, round(annotated.shape[0] * 640 / annotated.shape[1])))
+        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 72])
+        self.latest_preview = buf.tobytes() if ok else self.latest_preview
+        self.latest_raw = frame
+        self.proc_ms.append((time.perf_counter() - t0) * 1e3)
+        self.frames += 1
+        self._fps_n += 1
+        if time.time() - self._fps_t >= 2:
+            self.fps = self._fps_n / (time.time() - self._fps_t)
+            self._fps_t, self._fps_n = time.time(), 0
+        return self.latest_jpeg
+
+    def _flush_pending(self, frame: np.ndarray, res: FrameResult, now: float) -> None:
+        pending, self._pending = self._pending, []
+        for kind, ev in pending:
+            if kind == "open":
+                snap = self._snapshot(frame, res, ev)
+                started = self._wall(ev.started_at)
+                zone = next((z for z in self.cfg.scene.zones if z.id == ev.zone), None)
+                self.store.insert({
+                    "id": ev.id, "camera": self.cfg.id, "camera_title": self.cfg.title, "zone": ev.zone,
+                    "zone_title": zone.title if zone else ev.zone, "type": ev.type, "title": ev.title,
+                    "severity": ev.severity, "track_id": ev.track_id, "started_at": started,
+                    "confirmed_at": self._wall(ev.confirmed_at), "duration_s": ev.duration_s,
+                    "latency_s": round(ev.confirmed_at - ev.started_at, 2), "score": ev.score,
+                    "details": ev.details, "snapshot": snap, "status": "new",
+                    "history": [{"status": "new", "at": time.time(), "who": "система"}], "closed": 0,
+                })
+                self.publish({"kind": "event_open", "event": self.store.get(ev.id)})
+            else:
+                last = self._last_update_pub.get(ev.id, 0)
+                if time.time() - last < 1.0:
+                    continue
+                self._last_update_pub[ev.id] = time.time()
+                if self.store.get(ev.id) is None:
+                    continue
+                self._snapshot(frame, res, ev)
+                self.store.update(ev.id, duration_s=ev.duration_s, score=ev.score, details=ev.details, closed=0)
+                self.publish({"kind": "event_update", "event": self.store.get(ev.id)})
+
+    def _snapshot(self, frame: np.ndarray, res: FrameResult, ev: Event) -> str:
+        img = draw(frame, self.cfg.scene, res, highlight_track=ev.track_id)
+        x1, y1, x2, y2 = (int(v) for v in ev.box)
+        cv2.rectangle(img, (x1 - 4, y1 - 4), (x2 + 4, y2 + 4), (40, 40, 230), 4)
+        name = f"{ev.id}.jpg"
+        cv2.imwrite(str(self.media / name), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        return f"/media/{name}"
+
+    def stats(self) -> dict:
+        arr = np.asarray(self.proc_ms) if self.proc_ms else None
+        return {"camera": self.cfg.id, "title": self.cfg.title, "fps": round(self.fps, 1), "frames": self.frames,
+                "proc_p50": round(float(np.percentile(arr, 50)), 1) if arr is not None else None,
+                "proc_p95": round(float(np.percentile(arr, 95)), 1) if arr is not None else None,
+                "active": len(self.events.active)}
+
+
+class VideoWorker(threading.Thread):
+    """Видеофайл (по кругу, в реальном времени) или RTSP-поток."""
+
+    def __init__(self, proc: SourceProcessor, source: str):
+        super().__init__(daemon=True, name=f"cam-{proc.cfg.id}")
+        self.proc = proc
+        self.source = source
+        self.stop_flag = threading.Event()
+
+    def run(self) -> None:
+        loop_offset = 0.0
+        while not self.stop_flag.is_set():
+            cap = cv2.VideoCapture(self.source)
+            if not cap.isOpened():
+                time.sleep(3)
+                continue
+            src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            step = max(1, round(src_fps / self.proc.cfg.analysis_fps))
+            is_file = not self.source.startswith(("rtsp://", "http://", "https://"))
+            idx, t_start, video_t = 0, time.time(), 0.0
+            while not self.stop_flag.is_set():
+                ok = cap.grab()
+                if not ok:
+                    break
+                idx += 1
+                if idx % step:
+                    continue
+                ok, frame = cap.retrieve()
+                if not ok:
+                    break
+                video_t = idx / src_fps
+                if is_file:                                     # держим темп реального времени
+                    delay = t_start + video_t - time.time()
+                    if delay > 0:
+                        time.sleep(delay)
+                if frame.shape[1] > 1280:
+                    scale = 1280 / frame.shape[1]
+                    frame = cv2.resize(frame, (1280, round(frame.shape[0] * scale)))
+                self.proc.process(frame, loop_offset + video_t)
+            cap.release()
+            loop_offset += video_t + 1.0
+            if not self.proc.cfg.loop and is_file:
+                break

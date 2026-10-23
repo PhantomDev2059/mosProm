@@ -1,0 +1,18 @@
+[project]
+name = "linq-safety"
+version = "0.1.0"
+description = "Видеоконтроль нарушений промышленной безопасности на ускорителе LinQ"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# декодирование видео и CPU-инференс для разработки без стенда
+video = ["opencv-python-headless>=4.9", "onnxruntime>=1.18"]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=8.0", "httpx>=0.27", "fastapi>=0.110"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

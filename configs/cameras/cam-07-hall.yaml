@@ -1,0 +1,8 @@
+camera: cam-07-hall
+title: Проходная, турникеты
+source: cam_hall.mp4
+analysis_fps: 5
+models: [pose, coco]
+rules:
+  - {type: running}
+  - {type: phone}

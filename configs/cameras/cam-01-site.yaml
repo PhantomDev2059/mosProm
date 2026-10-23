@@ -1,0 +1,9 @@
+camera: cam-01-site
+title: Стройплощадка, корпус А
+source: cam_site.mp4
+analysis_fps: 5
+models: [pose, ppe]
+rules:
+  - {type: no_helmet}
+  - {type: no_vest}
+  - {type: fall}

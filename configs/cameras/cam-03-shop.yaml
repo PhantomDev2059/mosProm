@@ -1,0 +1,9 @@
+camera: cam-03-shop
+title: Цех №2, проход между станками
+source: cam_shop.mp4
+analysis_fps: 5
+models: [pose, ppe]
+rules:
+  - {type: no_helmet}
+  - {type: no_vest}
+  - {type: running}

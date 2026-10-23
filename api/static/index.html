@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinQ Guard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="mark" aria-hidden="true"></span><b>LinQ Guard</b><span class="sub">контроль нарушений ТБ</span></div>
+  <nav class="tabs" id="tabs">
+    <a href="#monitor" data-view="monitor">Мониторинг</a>
+    <a href="#gallery" data-view="gallery">Галерея нарушений</a>
+    <a href="#journal" data-view="journal">Журнал</a>
+    <a href="#analytics" data-view="analytics">Аналитика</a>
+    <a href="#zones" data-view="zones">Камеры и зоны</a>
+    <a href="#webcam" data-view="webcam">Вебкамера</a>
+    <a href="#linq" data-view="linq">LinQ</a>
+  </nav>
+  <div class="status">
+    <span class="chip" id="st-active">— активных</span>
+    <span class="chip mono" id="st-backend">—</span>
+    <button class="chip btn-chip" id="sound-btn" type="button" aria-pressed="false">Звук выкл.</button>
+    <span class="clock mono" id="clock">--:--:--</span>
+  </div>
+</header>
+
+<main>
+  <!-- МОНИТОРИНГ -->
+  <section class="view" id="view-monitor">
+    <div class="monitor">
+      <div class="cams" id="cams"></div>
+      <aside class="feed-panel">
+        <div class="panel-h"><b>Лента событий</b><span class="muted small" id="feed-count"></span></div>
+        <ul class="feed" id="feed"></ul>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ГАЛЕРЕЯ -->
+  <section class="view" id="view-gallery" hidden>
+    <div class="toolbar" data-filters="gallery"></div>
+    <div class="gallery" id="gallery"></div>
+  </section>
+
+  <!-- ЖУРНАЛ -->
+  <section class="view" id="view-journal" hidden>
+    <div class="toolbar" data-filters="journal"><a class="btn" id="csv-link" href="/api/events.csv">Экспорт CSV</a></div>
+    <div class="table-wrap"><table class="journal">
+      <thead><tr><th>Время</th><th>Камера</th><th>Зона</th><th>Нарушение</th><th>Уровень</th><th class="num">Длит., с</th><th class="num">До тревоги, с</th><th>Статус</th><th>Кадр</th></tr></thead>
+      <tbody id="journal"></tbody>
+    </table></div>
+  </section>
+
+  <!-- АНАЛИТИКА -->
+  <section class="view" id="view-analytics" hidden>
+    <div class="toolbar">
+      <label>Период <select id="an-hours"><option value="24">сутки</option><option value="168" selected>неделя</option><option value="720">месяц</option></select></label>
+      <span class="muted small">Считается по журналу событий, без досчётов.</span>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="charts">
+      <div class="card"><h3>Нарушения по типам</h3><div id="ch-type" class="bars"></div></div>
+      <div class="card"><h3>По камерам</h3><div id="ch-cam" class="bars"></div></div>
+      <div class="card wide"><h3>Когда нарушают: день недели × час</h3><div id="ch-heat" class="heat"></div></div>
+      <div class="card"><h3>Реакция на события</h3><div id="ch-status" class="bars"></div></div>
+    </div>
+  </section>
+
+  <!-- ЗОНЫ -->
+  <section class="view" id="view-zones" hidden>
+    <div class="zones">
+      <div class="zone-canvas">
+        <div class="toolbar">
+          <label>Камера <select id="z-cam"></select></label>
+          <button class="btn" id="z-new" type="button">Новая зона</button>
+          <button class="btn" id="z-finish" type="button" disabled>Замкнуть полигон</button>
+          <span class="muted small" id="z-hint">Выберите зону или создайте новую, затем кликами отметьте углы на кадре.</span>
+        </div>
+        <div class="canvas-wrap"><canvas id="z-canvas" width="1280" height="720"></canvas></div>
+      </div>
+      <aside class="zone-side">
+        <div class="panel-h"><b>Зоны камеры</b></div>
+        <ul class="zone-list" id="z-list"></ul>
+        <div id="z-edit"></div>
+        <button class="btn primary" id="z-save" type="button">Сохранить и применить</button>
+        <p class="muted small" id="z-msg"></p>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ВЕБКАМЕРА -->
+  <section class="view" id="view-webcam" hidden>
+    <div class="webcam">
+      <div class="card">
+        <div class="toolbar">
+          <button class="btn primary" id="wc-start" type="button">Включить камеру</button>
+          <button class="btn" id="wc-stop" type="button" disabled>Остановить</button>
+          <span class="muted small" id="wc-status">Изобразите нарушение: упадите и полежите, возьмите телефон у уха, поднесите «сигарету» ко рту.</span>
+        </div>
+        <div class="wc-stage"><img id="wc-out" alt="Размеченный кадр с вебкамеры"><video id="wc-video" playsinline muted hidden></video></div>
+      </div>
+      <aside class="feed-panel">
+        <div class="panel-h"><b>События вебкамеры</b></div>
+        <ul class="feed" id="wc-feed"></ul>
+      </aside>
+    </div>
+  </section>
+
+  <!-- LINQ -->
+  <section class="view" id="view-linq" hidden>
+    <div class="linq">
+      <div class="card wide">
+        <h3>Модели: задержка по этапам, мс</h3>
+        <p class="muted small" id="lq-backend"></p>
+        <div class="table-wrap"><table><thead><tr><th>Модель</th><th>Бэкенд</th><th class="num">Пре p50</th><th class="num">Инференс p50</th><th class="num">Инференс p95</th><th class="num">Пост p50</th></tr></thead><tbody id="lq-models"></tbody></table></div>
+      </div>
+      <div class="card wide">
+        <h3>Камеры: темп обработки</h3>
+        <div class="table-wrap"><table><thead><tr><th>Камера</th><th class="num">Кадров/с</th><th class="num">Кадр p50, мс</th><th class="num">Кадр p95, мс</th><th class="num">Активных</th></tr></thead><tbody id="lq-cams"></tbody></table></div>
+      </div>
+      <div class="card wide">
+        <h3>Перенос на ускоритель LinQ</h3>
+        <div class="table-wrap"><table><thead><tr><th>Модель</th><th>Архитектура</th><th>В списке SDK</th><th>Вход</th><th>Статус</th></tr></thead>
+        <tbody>
+          <tr><td>Поза людей</td><td>YOLOv8n-pose</td><td><span class="pill ok">да, yolov8n_pose</span></td><td class="mono">1×3×640×640</td><td>ONNX готов, компиляция в .tpu</td></tr>
+          <tr><td>СИЗ, техника, огонь, сигареты</td><td>YOLOv8 detect</td><td><span class="pill ok">семейство v8</span></td><td class="mono">1×3×640×640</td><td>ONNX готов; финал — один общий детектор</td></tr>
+        </tbody></table></div>
+        <p class="muted small">На стенде LinQ TPU считает сеть до головы YOLO, хвост (decode) и NMS выполняются на CPU тем же кодом, что и здесь.</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <button class="modal-x" id="modal-x" type="button" aria-label="Закрыть">×</button>
+    <img id="m-img" alt="Кадр-доказательство">
+    <div class="m-body">
+      <div class="m-top"><span class="pill" id="m-sev"></span><span class="pill" id="m-status"></span></div>
+      <h2 id="m-title"></h2>
+      <dl class="kv" id="m-kv"></dl>
+      <div class="btns">
+        <button class="btn primary" data-st="confirmed" type="button">Подтвердить</button>
+        <button class="btn" data-st="false" type="button">Ложное</button>
+        <button class="btn" data-st="sent_to_master" type="button">Передать мастеру</button>
+        <button class="btn" data-st="resolved" type="button">Устранено</button>
+      </div>
+      <ol class="history" id="m-hist"></ol>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
