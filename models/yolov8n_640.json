@@ -1,0 +1,71 @@
+{
+  "program": "yolov8n_640_b1_o5_h1m.tpu",
+  "input": "images",
+  "imgsz": 640,
+  "outputs": [
+    "/model.22/cv2.0/cv2.0.2/Conv_output_0",
+    "/model.22/cv3.0/cv3.0.2/Conv_output_0",
+    "/model.22/cv2.1/cv2.1.2/Conv_output_0",
+    "/model.22/cv3.1/cv3.1.2/Conv_output_0",
+    "/model.22/cv2.2/cv2.2.2/Conv_output_0",
+    "/model.22/cv3.2/cv3.2.2/Conv_output_0"
+  ],
+  "output_shapes": [
+    [
+      1,
+      64,
+      80,
+      80
+    ],
+    [
+      1,
+      80,
+      80,
+      80
+    ],
+    [
+      1,
+      64,
+      40,
+      40
+    ],
+    [
+      1,
+      80,
+      40,
+      40
+    ],
+    [
+      1,
+      64,
+      20,
+      20
+    ],
+    [
+      1,
+      80,
+      20,
+      20
+    ]
+  ],
+  "levels": [
+    [
+      "/model.22/cv2.0/cv2.0.2/Conv_output_0",
+      "/model.22/cv3.0/cv3.0.2/Conv_output_0"
+    ],
+    [
+      "/model.22/cv2.1/cv2.1.2/Conv_output_0",
+      "/model.22/cv3.1/cv3.1.2/Conv_output_0"
+    ],
+    [
+      "/model.22/cv2.2/cv2.2.2/Conv_output_0",
+      "/model.22/cv3.2/cv3.2.2/Conv_output_0"
+    ]
+  ],
+  "strides": [
+    8,
+    16,
+    32
+  ],
+  "num_classes": 80
+}

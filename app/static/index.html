@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICEQ · LinQ TPU</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">ICEQ</span><span class="sub">безопасность по видео · LinQ TPU</span></div>
+  <nav>
+    <button class="tab active" data-tab="demo">Демо</button>
+    <button class="tab" data-tab="org">Материалы оргов</button>
+    <button class="tab" data-tab="task">Задача</button>
+    <button class="tab" data-tab="tpu">LinQ TPU</button>
+  </nav>
+  <div class="status" id="status"><span class="dot"></span><span>проверка…</span></div>
+</header>
+
+<main>
+<!-- ============================ ДЕМО ============================ -->
+<section id="demo" class="panel active">
+  <div class="controls">
+    <div class="seg" id="mode">
+      <button data-mode="tpu" class="on">LinQ TPU</button>
+      <button data-mode="cpu">CPU (сравнение)</button>
+    </div>
+    <label>порог уверенности <input type="range" id="conf" min="0.1" max="0.9" step="0.05" value="0.3"> <b id="confv">0.30</b></label>
+    <label>кадров/с для видео <input type="number" id="fps" min="1" max="30" value="8"></label>
+    <span class="hint" id="modelinfo"></span>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Картинки</h2>
+      <label class="drop" id="imgdrop">
+        <input type="file" id="imgfile" accept="image/*" multiple hidden>
+        Перетащите картинки сюда или <u>выберите файлы</u>
+      </label>
+      <div class="samples" id="imgsamples"></div>
+    </div>
+    <div class="card">
+      <h2>Видео</h2>
+      <label class="drop" id="viddrop">
+        <input type="file" id="vidfile" accept="video/*" hidden>
+        Перетащите видео (mp4/avi/mov) или <u>выберите файл</u>
+      </label>
+      <div class="samples" id="vidsamples"></div>
+    </div>
+  </div>
+
+  <div class="card" id="videocard" hidden>
+    <div class="row between">
+      <h2 id="vidtitle">Видео</h2>
+      <div class="row"><button class="btn" id="vidrestart">Заново</button><button class="btn ghost" id="vidstop">Стоп</button></div>
+    </div>
+    <div class="videowrap">
+      <img id="vidstream" alt="поток с детекциями">
+      <aside class="vstats">
+        <div class="kpis">
+          <div><span id="s_fps">–</span><small>FPS обработки</small></div>
+          <div><span id="s_lat">–</span><small>мс от кадра до ответа</small></div>
+          <div><span id="s_tpu">–</span><small id="s_tpu_l">мс TPU</small></div>
+          <div><span id="s_n">0</span><small>кадров</small></div>
+        </div>
+        <h3>События (демо-правила)</h3>
+        <ul class="events" id="s_events"><li class="muted">пока нет</li></ul>
+        <h3>Классы в кадрах</h3>
+        <div class="chips" id="s_classes"></div>
+        <p class="err" id="s_err"></p>
+      </aside>
+    </div>
+  </div>
+
+  <div class="results" id="imgresults"></div>
+</section>
+
+<!-- ============================ МАТЕРИАЛЫ ОРГОВ ============================ -->
+<section id="org" class="panel">
+  <div class="card notice">
+    <b>Датасетов организаторы не выдают.</b> Слайд 8 кейса: модели — из открытых источников (modelscope, github…),
+    видео и картинки — <i>на выбор команды</i>. На сервере Jupyter проверено: кроме примера ResNet50
+    и одной картинки ImageNet там ничего нет. Ниже — всё, что прислали организаторы: кейс, инструкции, SDK, примеры кода.
+    Для проверки на «производственном» видео во вкладке «Демо» лежат ролики <code>worker-zone-detection</code> и
+    <code>people-detection</code> (Intel IoT sample videos).
+  </div>
+  <div class="orgwrap">
+    <aside class="card orglist" id="orglist"></aside>
+    <div class="card orgview"><iframe id="orgframe" title="просмотр файла"></iframe></div>
+  </div>
+</section>
+
+<!-- ============================ ЗАДАЧА ============================ -->
+<section id="task" class="panel">
+  <div class="hero">
+    <p class="kicker">Хакатон «Открой Моспром» · кейс LinQ</p>
+    <h1>Интеллектуальный сервис контроля нарушений промышленной безопасности по видео с камер на российских ИИ-ускорителях LinQ</h1>
+    <p class="lead">Камеры стоят почти на каждом производстве, но работают как архив — их смотрят после инцидента. Нужна система, которая <b>в реальном времени</b> замечает опасное поведение людей и <b>сразу и надёжно</b> сообщает ответственным. Главный критерий оценки — <b>насколько быстро и надёжно система сообщает о реальном инциденте</b>.</p>
+  </div>
+
+  <div class="grid3">
+    <div class="card"><h3>Почему сейчас плохо</h3><ul>
+      <li>до 70–80% инцидентов — человеческий фактор (СИЗ, опасные зоны, оборудование, огонь)</li>
+      <li>оператор теряет внимание через 20–30 минут у стены мониторов</li>
+      <li>нарушения находят поздно или не находят вовсе</li>
+      <li>нет статистики: где, когда и что нарушают чаще</li>
+      <li>контроль субъективен и выборочен</li>
+      <li>коммерческая видеоаналитика завязана на зарубежные GPU</li>
+    </ul></div>
+    <div class="card"><h3>Какие паттерны ловить</h3><ol class="num">
+      <li>бег по цеху, резкие перемещения у техники</li>
+      <li>опасное сближение с движущейся техникой / транспортом</li>
+      <li>телефон при работе с оборудованием или на ходу</li>
+      <li>курение / открытый огонь вне отведённых мест</li>
+      <li>перелезание через ограждения, под конвейером или грузом</li>
+      <li>работа на высоте без страховочной привязи</li>
+      <li>падение, неподвижное лежание, потеря сознания</li>
+      <li>переноска груза с нарушением правил (доп.)</li>
+    </ol></div>
+    <div class="card"><h3>Реальные условия</h3><ul>
+      <li>слабое освещение, блики, пыль, пар, дым, ночь, погода</li>
+      <li>каска или респиратор — несколько десятков пикселей</li>
+      <li>окклюзии оборудованием и людьми</li>
+      <li>ложные срабатывания быстро убивают доверие</li>
+      <li>от события до оповещения — не больше нескольких секунд</li>
+      <li>форматы моделей, квантование и производительность LinQ на нескольких потоках</li>
+    </ul></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3>Обязательно</h3><div class="req">
+      <div><b>Приём данных</b>видеопотоки с камер или наборы тематических картинок (стоп-кадры)</div>
+      <div><b>Распознавание</b>нарушения определяются нейросетевыми моделями</div>
+      <div><b>Оповещения</b>веб/GUI; в оповещении кадр или фрагмент, камера, время, тип нарушения</div>
+      <div><b>Подавление повторов</b>одно нарушение — строго одно оповещение</div>
+      <div><b>Журнал событий</b>фильтры по типу, камере, зоне и времени</div>
+      <div><b>Инференс на LinQ</b>с обязательными замерами скорости обработки</div>
+    </div>
+    <p class="muted">Сценарии можно выбрать, но архитектура должна позволять добавлять новые паттерны без переделки.</p></div>
+    <div class="card"><h3>Желательно</h3><ol class="num">
+      <li>правила и зоны под каждую камеру (полигон опасной зоны прямо на кадре)</li>
+      <li>подавление повторных срабатываний</li>
+      <li>дашборд: нарушения по типам, камерам, времени суток и дням</li>
+      <li>подтверждение / отклонение события оператором (дообучение, оценка точности)</li>
+      <li>несколько потоков одновременно</li>
+    </ol>
+    <h3>Роли</h3>
+    <p class="muted">Специалист по ОТ (настраивает правила), мастер смены (получает одно оповещение, если нарушение длится несколько секунд), диспетчер (лента событий: «подтверждено / ложное / передано мастеру», критичные — приоритетом), работники, служба ОТ и юристы (журнал как доказательная база, ст. 143 УК РФ), менеджмент (статистика), ИТ-служба (FPS и задержка на узел LinQ, новые нарушения — модулями).</p></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3>Критерии оценки</h3><ul>
+      <li><b>Прототип</b> — фактическая функциональность соответствует заявленной</li>
+      <li><b>Решение основной проблемы</b></li>
+      <li><b>Разработка и внедрение</b> — эффект оправдывает затраты</li>
+      <li><b>Новаторские идеи</b></li>
+      <li><b>UI/UX</b></li>
+      <li><b>Второстепенные проблемы</b>: ложные срабатывания, дубли, настройка под участок, журнал, производительность на LinQ, расширяемость</li>
+      <li><b>Аналитика</b>: аудитория, UX-проблемы, аналоги</li>
+    </ul></div>
+    <div class="card"><h3>Сроки</h3>
+      <div class="timeline">
+        <div><b>23.10 · 18:00</b>1-й чек-поинт: как команда видит решение. После него в ЛК должна быть ссылка на решение (можно пустую)</div>
+        <div><b>24.10 · 11:00</b>2-й чек-поинт: прогресс и вопросы</div>
+        <div><b>24.10 · 18:00</b>3-й чек-поинт</div>
+        <div class="hot"><b>25.10 · 10:00</b>дедлайн загрузки решения в ЛК (обязательно README)</div>
+        <div><b>25.10 · 12:00</b>онлайн-защита</div>
+      </div>
+      <p class="muted">Пропуск двух чек-поинтов — выбывание.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ TPU ============================ -->
+<section id="tpu" class="panel">
+  <div class="hero">
+    <p class="kicker">Что нам выдали организаторы</p>
+    <h1>LinQ TPU — российский ИИ-ускоритель, доступный удалённо</h1>
+    <p class="lead">Физически к ускорителю доступа нет: модель компилируется локально в «программу для TPU» (<code>.tpu</code>), кладётся на сервер и выполняется воркером, который берёт задачи из очереди RabbitMQ.</p>
+  </div>
+
+  <div class="card"><h3>Маршрут модели</h3>
+    <div class="flow">
+      <div>Обученная сеть<small>ONNX или TF GraphDef, вход фиксированного размера</small></div>
+      <div>Conditioning<small><code>preliminary_model_conditioning</code></small></div>
+      <div>Квантование<small>калибровка порогов на реальных картинках (<code>calibrate_torch</code>, опц. fine-tune)</small></div>
+      <div>Компиляция<small>под <code>TPU_H1M</code>, пресеты O1 / O5</small></div>
+      <div>Программа <code>.tpu</code><small>топология + веса; batch зафиксирован</small></div>
+    </div>
+    <h3>Маршрут инференса (наша схема)</h3>
+    <div class="flow">
+      <div>Сайт на ноутбуке<small>кадр → JPEG ~50–150 КБ</small></div>
+      <div>VPN ~4 Мбит/с<small>OpenVPN, 10.0.114.0/24</small></div>
+      <div>Relay на сервере<small>letterbox 640, тензор 4.9 МБ — внутри площадки</small></div>
+      <div>RabbitMQ → TPU<small><code>tpu.direct/input</code>, заголовок <code>uri=file:///auto/cache/&lt;login&gt;/*.tpu</code></small></div>
+      <div>Relay → сайт<small>DFL + NMS на CPU, назад только JSON с боксами</small></div>
+    </div>
+    <p class="muted">Почему relay: прямой путь «ноутбук → RabbitMQ» работает (ResNet50 проверен), но через VPN тензор YOLO 640×640 float32 (4.9 МБ) шёл бы секунды. Механизм <code>response_routing_keys</code> в API задуман как раз под такие цепочки с пост-обработкой.</p>
+  </div>
+
+  <div class="grid2">
+    <div class="card"><h3>Живой статус</h3>
+      <div id="tpulive" class="kv"></div>
+      <h3>Замер скорости (YOLOv8n 640)</h3>
+      <div class="row">
+        <button class="btn" data-bench="tpu,1">TPU, по одному</button>
+        <button class="btn" data-bench="tpu,4">TPU, 4 параллельно</button>
+        <button class="btn ghost" data-bench="cpu,1">CPU ноутбука</button>
+      </div>
+      <div id="benchout" class="bench"></div>
+    </div>
+    <div class="card"><h3>Что известно о стенде</h3>
+      <div class="kv">
+        <div><span>SDK</span><b>tpu_framework 2026.9.45 (Linux x86_64, Python 3.12)</b></div>
+        <div><span>Целевая платформа</span><b>TPU_H1M (программы <code>*_h1m.tpu</code>)</b></div>
+        <div><span>Форматы на входе</span><b>ONNX (через встроенный конвертер в TF), TensorFlow GraphDef</b></div>
+        <div><span>Ограничения</span><b>только статические размеры входа; batch задаётся при компиляции; часть головы детекторов выносится на CPU (глава «Sub model»)</b></div>
+        <div><span>API</span><b>Python (pytpu, облачный формат tpu_pycloud_format), C, C++</b></div>
+        <div><span>Jupyter</span><b>JupyterHub 4.1.6, контейнер с Python 3.11; 64 CPU и 187 ГБ RAM видно изнутри</b></div>
+        <div><span>Брокер</span><b>RabbitMQ 10.0.114.30:5672, обмен <code>tpu.direct</code>, очередь <code>input</code></b></div>
+        <div><span>ResNet50 (эталон)</span><b>ноутбук → TPU → ноутбук: 107–512 мс, медиана 313 мс</b></div>
+        <div><span>Канал VPN</span><b>≈ 4 Мбит/с (замер 1–10 МБ через брокер)</b></div>
+      </div>
+      <h3>Поддерживаемые модели (из документации)</h3>
+      <p class="models">yolo5s · yolov8n_pose · yolov8m_seg · yolo11n_obb · yolo12m · yolo2/3/4 · tiny_yolo2/3 · ssd_mobilenet_v1/v2 · ssdlite320_mobilenet_v3 · scrfd · resnet34/50/152 · efficientnet_b0–b4 · mobilenet_v1/v2 · inception_v1–v4 · densenet121 · vgg19 · squeezenet · regnet_y_800mf · iresnet50/101 · glint360k · anti_spoof_mn3 · fcn_8s · flownets · lenet5 · nasnet/pnasnet</p>
+      <p class="muted">Характеристик железа (TOPS, память, число чипов) в выданных материалах нет — стоит спросить у экспертов LinQ.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<template id="imgcard">
+  <div class="card result">
+    <div class="canvaswrap"><canvas></canvas><div class="loading">TPU…</div></div>
+    <div class="meta"><b class="fname"></b><div class="timing"></div><div class="evs"></div><div class="chips"></div></div>
+  </div>
+</template>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
