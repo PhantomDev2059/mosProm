@@ -34,7 +34,7 @@ META = json.loads((ROOT / 'models' / f'{MODEL}.json').read_text())
 UPLOADS = ROOT / 'uploads'
 UPLOADS.mkdir(exist_ok=True)
 MAX_SIDE = 1280      # картинку ужимаем перед отправкой: по VPN ~4 Мбит/с
-MAX_INFLIGHT = 4     # сколько кадров видео одновременно «в полёте» к TPU
+MAX_INFLIGHT = 8     # кадров видео одновременно «в полёте» к TPU: 1 → 2.3 FPS, 4 → 9.7, 8 → 15.2
 
 relay = RelayClient(os.environ['LINQ_AMQP_HOST'], int(os.environ['LINQ_AMQP_PORT']), os.environ['LINQ_USER'])
 cpu_pool = ThreadPoolExecutor(max_workers=2)

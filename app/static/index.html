@@ -219,6 +219,7 @@
         <div><span>API</span><b>Python (pytpu, облачный формат tpu_pycloud_format), C, C++</b></div>
         <div><span>Jupyter</span><b>JupyterHub 4.1.6, контейнер с Python 3.11; 64 CPU и 187 ГБ RAM видно изнутри</b></div>
         <div><span>Брокер</span><b>RabbitMQ 10.0.114.30:5672, обмен <code>tpu.direct</code>, очередь <code>input</code></b></div>
+        <div><span>YOLOv8n 640 (наш)</span><b>компиляция O5, программа 2.8 МБ; ноутбук → relay → TPU → ноутбук: p50 ≈ 400 мс; 2.3 FPS по одному кадру, 9.7 FPS при 4 в полёте, 15.2 FPS при 8 (замер 23.10)</b></div>
         <div><span>ResNet50 (эталон)</span><b>ноутбук → TPU → ноутбук: 107–512 мс, медиана 313 мс</b></div>
         <div><span>Канал VPN</span><b>≈ 4 Мбит/с (замер 1–10 МБ через брокер)</b></div>
       </div>
