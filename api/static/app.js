@@ -316,14 +316,28 @@ function pickZoneCam() {
   Z.sel = Z.zones.length ? 0 : -1;
   Z.drawing = null;
   Z.img = new Image();
+  Z.heat = [];
+  api(`/api/cameras/${encodeURIComponent(Z.cam.id)}/heat`).then((pts) => { Z.heat = pts; drawZones(); });
   Z.img.onload = () => { const c = $("#z-canvas"); c.width = Z.img.width; c.height = Z.img.height; drawZones(); };
   Z.img.src = `/api/cameras/${encodeURIComponent(Z.cam.id)}/frame.jpg?t=${Date.now()}`;
   renderZoneSide();
 }
 $("#z-cam").addEventListener("change", pickZoneCam);
+$("#z-heat").addEventListener("change", () => drawZones());
 function drawZones() {
   const c = $("#z-canvas"), g = c.getContext("2d");
+  if (!Z.img.complete || !Z.img.naturalWidth) return;
   g.drawImage(Z.img, 0, 0);
+  if ($("#z-heat").checked && Z.heat?.length) {
+    const r = Math.max(30, c.width / 22);
+    Z.heat.forEach((p) => {
+      const grad = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      grad.addColorStop(0, p.severity === "critical" ? "rgba(255,60,50,.42)" : "rgba(255,150,30,.30)");
+      grad.addColorStop(1, "rgba(255,120,30,0)");
+      g.fillStyle = grad;
+      g.fillRect(p.x - r, p.y - r, 2 * r, 2 * r);
+    });
+  }
   const poly = (pts, i) => {
     if (!pts.length) return;
     g.beginPath(); pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();

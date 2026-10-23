@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=3">
 </head>
 <body>
 <header class="top">
@@ -85,6 +85,7 @@
           <label>Камера <select id="z-cam"></select></label>
           <button class="btn" id="z-new" type="button">Новая зона</button>
           <button class="btn" id="z-finish" type="button" disabled>Замкнуть полигон</button>
+          <label><input type="checkbox" id="z-heat" checked> Тепловая карта нарушений за неделю</label>
           <span class="muted small" id="z-hint">Выберите зону или создайте новую, затем кликами отметьте углы на кадре.</span>
         </div>
         <div class="canvas-wrap"><canvas id="z-canvas" width="1280" height="720"></canvas></div>
@@ -166,6 +167,6 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

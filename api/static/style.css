@@ -121,7 +121,7 @@ td img{width:72px;aspect-ratio:16/10;object-fit:cover;border-radius:3px;display:
 .bar{display:grid;grid-template-columns:minmax(0,180px) minmax(0,1fr) 48px;gap:10px;align-items:center;font-size:13px}
 .bar .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar .track{height:14px;background:var(--surface-2);border-radius:3px;overflow:hidden}
-.bar .fill{height:100%;background:var(--hazard)}
+.bar .fill{display:block;height:100%;background:var(--hazard);border-radius:3px}
 .bar .v{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .heat{display:grid;grid-template-columns:34px repeat(24,minmax(0,1fr));gap:2px;font:500 10.5px/1 var(--f-mono);color:var(--muted)}
 .heat .c{height:22px;border-radius:2px;background:var(--surface-2)}

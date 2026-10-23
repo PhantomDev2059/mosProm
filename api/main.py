@@ -139,6 +139,19 @@ async def stream(cid: str):
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
+@app.get("/api/cameras/{cid}/heat")
+def camera_heat(cid: str, hours: float = 24 * 7):
+    """Точки нарушений на кадре камеры: низ рамки человека (где стоял) или центр объекта."""
+    pts = []
+    for r in store.query(camera=cid, since=time.time() - hours * 3600, limit=20000):
+        b = r.get("box")
+        if not b or b[2] <= b[0]:
+            continue
+        y = b[3] if r["type"] not in ("open_fire", "smoke") else (b[1] + b[3]) / 2
+        pts.append({"x": (b[0] + b[2]) / 2, "y": y, "severity": r["severity"], "type": r["title"]})
+    return pts
+
+
 class ZonesIn(BaseModel):
     zones: list[dict]
 

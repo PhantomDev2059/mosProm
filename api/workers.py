@@ -119,7 +119,7 @@ class SourceProcessor:
                     "severity": ev.severity, "track_id": ev.track_id, "started_at": started,
                     "confirmed_at": self._wall(ev.confirmed_at), "duration_s": ev.duration_s,
                     "latency_s": round(ev.confirmed_at - ev.started_at, 2), "score": ev.score,
-                    "details": ev.details, "snapshot": snap, "status": "new",
+                    "details": ev.details, "snapshot": snap, "status": "new", "box": [round(v) for v in ev.box],
                     "history": [{"status": "new", "at": time.time(), "who": "система"}], "closed": 0,
                 })
                 self.publish({"kind": "event_open", "event": self.store.get(ev.id)})

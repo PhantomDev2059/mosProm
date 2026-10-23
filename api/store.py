@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS events (
     camera TEXT, camera_title TEXT, zone TEXT, zone_title TEXT,
     type TEXT, title TEXT, severity TEXT, track_id INTEGER,
     started_at REAL, confirmed_at REAL, duration_s REAL, latency_s REAL,
-    score REAL, details TEXT, snapshot TEXT, clip TEXT,
+    score REAL, details TEXT, snapshot TEXT, clip TEXT, box TEXT,
     status TEXT DEFAULT 'new', history TEXT DEFAULT '[]', closed INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS events_time ON events(started_at);
@@ -27,8 +27,9 @@ class EventStore:
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         cols = {r[1] for r in self.db.execute("PRAGMA table_info(events)")}
-        if "clip" not in cols:                       # журнал старой версии
-            self.db.execute("ALTER TABLE events ADD COLUMN clip TEXT")
+        for col in ("clip", "box"):                  # журнал старой версии
+            if col not in cols:
+                self.db.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
         self.lock = threading.Lock()
 
     def insert(self, row: dict) -> None:
@@ -109,6 +110,7 @@ class EventStore:
 def _row(r: sqlite3.Row) -> dict:
     d = dict(r)
     d["details"] = json.loads(d["details"] or "{}")
+    d["box"] = json.loads(d["box"]) if d.get("box") else None
     d["history"] = json.loads(d["history"] or "[]")
     d["closed"] = bool(d["closed"])
     return d
