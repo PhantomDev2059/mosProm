@@ -25,14 +25,14 @@ const sevPill = (s) => `<span class="pill ${esc(s)}">${esc(SEV[s] || s)}</span>`
 const stPill = (s) => `<span class="pill st-${esc(s)}">${esc(ST[s] || s)}</span>`;
 
 /* ---------- маршрутизация ---------- */
-const VIEWS = ["monitor", "review", "gallery", "journal", "analytics", "zones", "webcam", "linq"];
+const VIEWS = ["monitor", "review", "gallery", "journal", "analytics", "quality", "zones", "webcam", "linq"];
 function show(view) {
   if (!VIEWS.includes(view)) view = "monitor";
   state.view = view;
   VIEWS.forEach((v) => { $("#view-" + v).hidden = v !== view; });
   document.querySelectorAll("#tabs a").forEach((a) => a.setAttribute("aria-current", a.dataset.view === view ? "page" : "false"));
   sendFrameWant();
-  ({ review: loadReview, gallery: loadGallery, journal: loadJournal, analytics: loadAnalytics, zones: loadZones, linq: loadLinq })[view]?.();
+  ({ review: loadReview, quality: loadQuality, gallery: loadGallery, journal: loadJournal, analytics: loadAnalytics, zones: loadZones, linq: loadLinq })[view]?.();
 }
 window.addEventListener("hashchange", () => show(location.hash.slice(1)));
 
@@ -473,6 +473,37 @@ $("#wc-stop").addEventListener("click", () => {
   $("#wc-start").disabled = false; $("#wc-stop").disabled = true;
   $("#wc-status").textContent = "Камера остановлена.";
 });
+
+/* ---------- качество ---------- */
+const pct = (v) => (v == null ? "—" : Math.round(v * 100) + "%");
+function qBlock(tag, m) {
+  if (!m) return "";
+  return `<div><span class="q-tag">${esc(tag)}</span><div class="q-num">
+    <div><b>${pct(m.recall)}</b><span>найдено падений (recall)</span></div>
+    <div><b>${pct(m.precision)}</b><span>тревог были настоящими (precision)</span></div>
+    <div><b>${m.f1 == null ? "—" : m.f1.toFixed(2)}</b><span>F1</span></div></div>
+    <p class="muted small">Ложных тревог на записях обычной активности: ${m.fp}</p></div>`;
+}
+async function loadQuality() {
+  const q = await api("/api/quality");
+  const f = q.fall;
+  $("#q-fall").innerHTML = f ? `<div class="q-cols">${qBlock("настройка порогов · нечётные записи", f.tune)}${qBlock("проверка · чётные записи, система их не видела", f.test)}</div>
+    <p class="muted small">По всему набору: ложных тревог в час — ${f.all_report.false_alarms_per_hour ?? "—"}, медиана времени до тревоги — ${f.all_report.latency_median_s ?? "—"} с,
+    взвешенное покрытие времени — ${pct(f.all_report.weighted_time_coverage)}. Правило: резкое опускание головы ≥ ${Math.round(f.best_params.head_drop * 100)}% роста за ${f.best_params.drop_window_s} с,
+    подтверждение ${f.confirm_s} с. Перебрано вариантов: ${f.grid_size}. Ограничение набора: камера в углу комнаты и разрешение 320×240 — на заводских камерах человек крупнее.</p>`
+    : `<p class="empty">Оценка ещё не запускалась.</p>`;
+  const rows = [];
+  Object.entries(q.quant).sort().forEach(([name, vers]) => Object.entries(vers).sort().forEach(([v, m]) => rows.push(`<tr><td>${esc(name)}</td><td>${v}</td>
+    <td class="num">${pct(m.recall_vs_fp32)}</td><td class="num">${m.precision_vs_fp32 == null ? "—" : pct(1 - m.precision_vs_fp32)}</td>
+    <td class="num">${m.mean_iou ?? "—"}</td><td class="num">${m.keypoint_err_heights == null ? "—" : (m.keypoint_err_heights * 100).toFixed(1)}</td>
+    <td class="num">${m.fp32_objects}</td><td class="small">${m.smart ? "с объектами" : "равномерная"}${m.finetune ? ` + дообучение ${m.finetune} эп.` : ""}</td></tr>`)));
+  $("#q-quant").innerHTML = rows.join("") || `<tr><td colspan="8" class="empty">Проверка ещё не запускалась.</td></tr>`;
+  const p = q.ppe;
+  $("#q-ppe").innerHTML = p ? `<div class="q-num"><div><b>${pct(p.map50)}</b><span>mAP@0.5 на тестовой части</span></div>
+    <div><b>${pct(p.map)}</b><span>mAP@0.5:0.95</span></div><div><b>${p.images}</b><span>тестовых изображений</span></div></div>
+    <p class="muted small">По классам (mAP@0.5): ${Object.entries(p.per_class || {}).map(([k, v]) => `${k} ${pct(v)}`).join(", ")}</p>`
+    : `<p class="empty">Обучение идёт: модель YOLOv8s на открытом наборе jhboyo/ppe-dataset (лицензия MIT) — каска, голова без каски, жилет.</p>`;
+}
 
 /* ---------- разбор смены ---------- */
 const RV = { jobs: [], job: null, items: [], cat: "", verdict: "", cur: 0, timer: null };

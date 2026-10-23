@@ -396,6 +396,33 @@ def linq_programs():
     return out
 
 
+@app.get("/api/quality")
+def quality():
+    """Результаты оценки качества: падения на UR Fall, точность после квантования, детектор СИЗ."""
+    import json as _json
+
+    def load(p: Path):
+        try:
+            return _json.loads(p.read_text())
+        except (OSError, ValueError):
+            return None
+
+    sweep = load(DATA / "eval" / "fall_sweep.json")
+    quant = {}
+    for folder, tag in ((MODELS / "tpu", "v1"), (MODELS / "tpu_v2", "v2")):
+        for p in folder.glob("*_report.json"):
+            r = load(p) or {}
+            if r.get("quant_check"):
+                quant.setdefault(r["name"], {})[tag] = r["quant_check"] | {"preset": r.get("preset"),
+                                                                            "smart": r.get("smart_calib"),
+                                                                            "finetune": r.get("finetune_epochs")}
+    ppe = None
+    res = Path("/workspace/linq/train/ppe_v8s_test")
+    if (res / "metrics.json").exists():
+        ppe = load(res / "metrics.json")
+    return {"fall": sweep, "quant": quant, "ppe": ppe}
+
+
 @app.get("/api/bench")
 def bench():
     """Замеры linq/bench.py по платформам: tpu (стенд LinQ), cuda, cpu."""

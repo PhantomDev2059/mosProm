@@ -219,6 +219,19 @@ td img{width:72px;aspect-ratio:16/10;object-fit:cover;border-radius:3px;display:
 .wc-stage{background:#000;border-radius:6px;overflow:hidden;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}
 .wc-stage img{max-width:100%;max-height:100%}
 
+/* качество */
+.quality{display:grid;gap:12px}
+.q-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px 20px}
+.q-grid b{display:block;font-weight:600;margin-bottom:2px}
+.q-grid p{margin:0;color:var(--muted);font-size:13.5px}
+.q-cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.q-num{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:8px 0}
+.q-num div{background:var(--surface-2);border-radius:4px;padding:10px}
+.q-num b{display:block;font:800 26px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.q-num span{font-size:12px;color:var(--muted)}
+.q-tag{font:600 11px/1 var(--f-mono);text-transform:uppercase;letter-spacing:.06em;color:var(--hazard)}
+@media (max-width:900px){.q-grid,.q-cols{grid-template-columns:1fr}}
+
 /* linq */
 .linq{display:grid;gap:12px}
 
