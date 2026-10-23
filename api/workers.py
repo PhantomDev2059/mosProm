@@ -11,7 +11,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from engine.backends import OnnxBackend
+from engine.backends import LinqTpuBackend, OnnxBackend
 from engine.config import CameraConfig
 from engine.detector import Detector, ModelSpec
 from engine.events import Event, EventManager
@@ -24,13 +24,20 @@ CLIP_PRE_S = 4.0       # секунд до подтверждения наруш
 CLIP_POST_S = 4.0      # и после
 
 
-def load_detectors(registry_path: Path) -> dict[str, Detector]:
+def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Detector]:
+    """backend="tpu" — программы .tpu на ускорителе LinQ (стенд), иначе ONNX Runtime на GPU/CPU."""
     reg = json.loads(registry_path.read_text())
+    tpu_dir = registry_path.parent / "tpu"
     out = {}
     for name, m in reg.items():
         spec = ModelSpec(name=name, kind=m["kind"], path=m["path"], conf=m.get("conf", 0.4),
                          class_map={int(k): v for k, v in m["class_map"].items()})
-        out[name] = Detector(spec, OnnxBackend(spec.path))
+        programs = sorted(tpu_dir.glob(f"{name}_b1_*_h1m.tpu"))
+        if backend == "tpu" and programs:
+            be = LinqTpuBackend(str(programs[0]), str(tpu_dir / f"{name}_tail.onnx"))
+        else:
+            be = OnnxBackend(spec.path)
+        out[name] = Detector(spec, be)
     return out
 
 

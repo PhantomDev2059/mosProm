@@ -5,5 +5,5 @@ analysis_fps: 5
 models: [pose, ppe]
 rules:
   - {type: no_helmet}
-  - {type: no_vest}
+  - {type: no_vest, min_person_px: 120}
   - {type: fall}

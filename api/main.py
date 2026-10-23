@@ -54,7 +54,7 @@ class Hub:
 
 
 hub = Hub()
-detectors = load_detectors(MODELS / "registry.json")
+detectors = load_detectors(MODELS / "registry.json", os.environ.get("LINQ_BACKEND", "onnx"))
 processors: dict[str, SourceProcessor] = {}
 workers: dict[str, VideoWorker] = {}
 
@@ -278,6 +278,19 @@ def metrics():
     return {"models": [d.stats() for d in detectors.values()],
             "cameras": [p.stats() for p in processors.values()],
             "gpu_backend": next(iter(detectors.values())).backend.name if detectors else None}
+
+
+@app.get("/api/linq")
+def linq_programs():
+    """Отчёты компиляции моделей в программы .tpu (linq/compile_tpu.py)."""
+    import json as _json
+    out = []
+    for p in sorted((MODELS / "tpu").glob("*_report.json")):
+        try:
+            out.append(_json.loads(p.read_text()))
+        except ValueError:
+            continue
+    return out
 
 
 @app.websocket("/ws/events")

@@ -85,7 +85,7 @@ def main() -> None:
     thresholds = regular.calibrate_torch(calibration_data={input_name: calib}, samplewise_percentile=99.9)
     RegularModel.dump_thresholds(str(out / f"{args.name}_thresholds.json"), thresholds)
     qm_name = f"{args.name}.qm.onnx"
-    regular.quantize(thresholds).save(file_dir=str(out), file_name=qm_name)
+    regular.quantize(thresholds).save(file_dir=str(out), file_name=qm_name, io_params_name=f"{args.name}_scales.json")
     report["calib_frames"] = len(calib)
     print(f"[3/4] квантование готово за {time.time() - t0:.0f} с", flush=True)
 

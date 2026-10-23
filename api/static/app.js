@@ -432,12 +432,26 @@ $("#wc-stop").addEventListener("click", () => {
 });
 
 /* ---------- LinQ ---------- */
+function quantCells(q) {
+  if (!q) return `<td class="num muted">проверка идёт</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>`;
+  const pct = (v) => (v == null ? "—" : Math.round(v * 100) + "%");
+  return `<td class="num">${pct(q.recall_vs_fp32)}</td><td class="num">${q.precision_vs_fp32 == null ? "—" : Math.round((1 - q.precision_vs_fp32) * 100) + "%"}</td>
+    <td class="num">${q.mean_iou ?? "—"}</td><td class="num">${q.keypoint_err_heights == null ? "—" : (q.keypoint_err_heights * 100).toFixed(1)}</td>`;
+}
 async function loadLinq() {
   const m = await api("/api/metrics");
   $("#lq-backend").textContent = `Сейчас модели работают через ${m.gpu_backend}. На стенде LinQ тот же код переключается на бэкенд linq-tpu.`;
   const ms = (o, k) => (o && o[k] != null ? o[k] : "—");
   $("#lq-models").innerHTML = m.models.map((d) => `<tr><td>${esc(d.model)}</td><td class="mono">${esc(d.backend)}</td>
     <td class="num">${ms(d.pre, "p50")}</td><td class="num">${ms(d.infer, "p50")}</td><td class="num">${ms(d.infer, "p95")}</td><td class="num">${ms(d.post, "p50")}</td></tr>`).join("");
+  const progs = await api("/api/linq");
+  $("#lq-programs").innerHTML = progs.length ? progs.map((p) => `<tr><td>${esc(p.name)}</td><td class="num">${p.head_nodes ?? "—"}</td>
+    <td class="num">${p.tail_nodes ?? "—"}</td><td class="num">${p.calib_frames ?? "—"}</td>
+    <td>${p.preset ? `<span class="pill ok">${esc(p.preset.toUpperCase())}</span>` : `<span class="pill high">не собрано</span>`}</td>
+    <td class="num">${p.program_mb ?? "—"}</td><td class="num">${p.compile_s ?? "—"}</td>
+    ${quantCells(p.quant_check)}
+    <td class="mono small">${esc((p.program || "").split("/").pop())}</td></tr>`).join("")
+    : `<tr><td colspan="12" class="empty">Компиляция идёт или ещё не запускалась.</td></tr>`;
   $("#lq-cams").innerHTML = m.cameras.map((c) => `<tr><td>${esc(c.title)}</td><td class="num">${c.fps}</td><td class="num">${c.proc_p50 ?? "—"}</td><td class="num">${c.proc_p95 ?? "—"}</td><td class="num">${c.active}</td></tr>`).join("");
 }
 

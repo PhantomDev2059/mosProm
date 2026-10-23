@@ -5,5 +5,5 @@ analysis_fps: 5
 models: [pose, ppe, forklift]
 rules:
   - {type: vehicle_proximity, min_gap_heights: 0.4}
-  - {type: no_vest}
+  - {type: no_vest, min_person_px: 120}
   - {type: running}
