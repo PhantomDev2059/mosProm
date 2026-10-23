@@ -57,8 +57,8 @@ class Fall:
     Пороги подобраны на нечётных записях UR Fall, качество проверяется на чётных (eval/urfall.py --split).
     """
 
-    def __init__(self, drop_window_s: float = 1.0, head_drop: float = 0.35, shrink: float = 0.75,
-                 hold_s: float = 0.6, memory_s: float = 10.0):
+    def __init__(self, drop_window_s: float = 0.8, head_drop: float = 0.45, shrink: float = 0.75,
+                 hold_s: float = 0.0, memory_s: float = 10.0):
         self.drop_window_s = drop_window_s
         self.head_drop = head_drop
         self.shrink = shrink

@@ -9,12 +9,12 @@ from .rules import RULES
 from .scene import FloorMap, RuleConfig, Schedule, Scene, Zone
 
 SEVERITY_DEFAULT = {
-    "fall": "critical", "immobile": "critical", "vehicle_proximity": "critical", "open_fire": "critical",
+    "fall": "critical", "fall_ml": "critical", "immobile": "critical", "vehicle_proximity": "critical", "open_fire": "critical",
     "smoke": "high", "zone_intrusion": "high", "no_helmet": "high", "smoking": "high",
     "no_vest": "medium", "running": "medium", "phone": "medium",
 }
 CONFIRM_DEFAULT = {
-    "fall": 0.3, "immobile": 0.0, "vehicle_proximity": 1.0, "open_fire": 2.0, "smoke": 3.0,
+    "fall": 0.3, "fall_ml": 0.3, "immobile": 0.0, "vehicle_proximity": 1.0, "open_fire": 2.0, "smoke": 3.0,
     "zone_intrusion": 2.0, "no_helmet": 3.0, "no_vest": 3.0, "running": 1.0, "phone": 3.0, "smoking": 2.0,
 }
 
