@@ -22,3 +22,4 @@ app/static/samples/*.mp4
 
 # открытые датасеты (скачиваются отдельно, см. README)
 datasets/
+logs/
