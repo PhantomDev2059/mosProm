@@ -1,18 +1,23 @@
 #!/bin/bash
 # Ночная цепочка на GPU, переживает перезагрузки инстанса: каждый этап оставляет отметку в $STATE,
 # обучение продолжается с последней эпохи. Запускается supervisor-ом (программа night_gpu).
+# Если видеокарт две — обучение идёт на второй, первая остаётся живым камерам.
 set -e
 ROOT=/workspace/linq/train
 STATE=/workspace/linq/state
 APP=/workspace/linq/app
-mkdir -p $STATE
+mkdir -p $STATE $ROOT
 . /workspace/linq/.venv/bin/activate
 cd $ROOT
 stage() { [ -f "$STATE/$1.done" ]; }
 mark() { touch "$STATE/$1.done"; echo "== этап $1 готов $(date +%T)"; }
+wait_sdk() { until /workspace/linq/sdk/.venv/bin/python -c "import tpu_framework" >/dev/null 2>&1; do sleep 60; done; }
+DEVICE=$([ "$(nvidia-smi -L | wc -l)" -ge 2 ] && echo 1 || echo 0)
 
 if ! stage fetch; then
-  python $APP/tools/fetch_ppe.py 8 | tee $ROOT/fetch.log
+  # разметка — из git-клона одним запросом; изображения — параллельной докачкой (Hugging Face ограничивает поштучные запросы)
+  [ -d $ROOT/ppe-git/train/labels ] || GIT_LFS_SKIP_SMUDGE=1 git clone -q --depth 1 https://huggingface.co/datasets/jhboyo/ppe-dataset $ROOT/ppe-git
+  python $APP/tools/fetch_ppe.py 16 | tee $ROOT/fetch.log
   grep -q "ошибок 0" $ROOT/fetch.log && mark fetch
 fi
 cat > $ROOT/ppe.yaml <<YAML
@@ -27,7 +32,7 @@ if ! stage train; then
   if [ -f $ROOT/ppe_v8s/weights/last.pt ]; then
     yolo detect train resume model=$ROOT/ppe_v8s/weights/last.pt
   else
-    yolo detect train model=yolov8s.pt data=$ROOT/ppe.yaml epochs=40 imgsz=640 batch=16 workers=6 device=0 \
+    yolo detect train model=yolov8s.pt data=$ROOT/ppe.yaml epochs=40 imgsz=640 batch=24 workers=12 device=$DEVICE \
       project=$ROOT name=ppe_v8s exist_ok=True cos_lr=True patience=15 plots=True
   fi
   mark train
@@ -55,6 +60,7 @@ PY
 fi
 
 if ! stage compile_ppe2; then
+  wait_sdk
   PY=/workspace/linq/sdk/.venv/bin/python
   cd $APP
   $PY linq/compile_tpu.py --onnx /workspace/linq/models/onnx/ppe2.onnx --name ppe2 --calib 120 --smart
