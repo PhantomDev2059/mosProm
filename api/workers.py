@@ -48,11 +48,12 @@ class SourceProcessor:
     """Общее для всех источников: конвейер, снимки-доказательства, запись в журнал, оповещения."""
 
     def __init__(self, cfg: CameraConfig, detectors: list[Detector], store: EventStore, media: Path,
-                 publish: Callable[[dict], None]):
+                 publish: Callable[[dict], None], notifier=None):
         self.cfg = cfg
         self.store = store
         self.media = media
         self.publish = publish
+        self.notifier = notifier
         self._pending: list[tuple[str, Event]] = []
         self.events = EventManager(cfg.id, on_open=self._on_open, on_update=self._on_update, on_close=self._on_close)
         self.pipeline = CameraPipeline(cfg, detectors, self.events)
@@ -125,7 +126,10 @@ class SourceProcessor:
                     "details": ev.details, "snapshot": snap, "status": "new", "box": [round(v) for v in ev.box],
                     "history": [{"status": "new", "at": time.time(), "who": "система"}], "closed": 0,
                 })
-                self.publish({"kind": "event_open", "event": self.store.get(ev.id)})
+                row = self.store.get(ev.id)
+                self.publish({"kind": "event_open", "event": row})
+                if self.notifier is not None:
+                    self.notifier.event_opened(row)
                 self._clips[ev.id] = {"frames": list(self._ring), "until": now + CLIP_POST_S}
             else:
                 last = self._last_update_pub.get(ev.id, 0)
@@ -157,7 +161,10 @@ class SourceProcessor:
             input=b"".join(frames), capture_output=True)
         if proc.returncode == 0:
             self.store.update(eid, clip=f"/media/{name}")
-            self.publish({"kind": "event_update", "event": self.store.get(eid)})
+            row = self.store.get(eid)
+            self.publish({"kind": "event_update", "event": row})
+            if self.notifier is not None and row is not None:
+                self.notifier.clip_ready(row)
 
     def _snapshot(self, frame: np.ndarray, res: FrameResult, ev: Event) -> str:
         img = draw(frame, self.cfg.scene, res, highlight_track=ev.track_id)

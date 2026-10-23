@@ -69,13 +69,17 @@ def main() -> None:
     ap.add_argument("--out", default="/workspace/linq/data/eval/urfall_report.json")
     ap.add_argument("--fps", type=float, default=10.0)
     ap.add_argument("--still", type=float, default=5.0)
+    ap.add_argument("--split", choices=["all", "tune", "test"], default="all",
+                    help="tune — нечётные номера записей (подбор порогов), test — чётные (честная проверка)")
     args = ap.parse_args()
 
     from api.workers import load_detectors
     detectors = [load_detectors(Path(args.registry))["pose"]]
     data = Path(args.data)
-    gt = ground_truth(data / "urfall-cam0-falls.csv")
-    videos = sorted(data.glob("*-cam0.mp4"))
+    keep = {"all": lambda n: True, "tune": lambda n: n % 2 == 1, "test": lambda n: n % 2 == 0}[args.split]
+    number = lambda name: int(name.split("-")[1])                                    # noqa: E731
+    gt = [g for g in ground_truth(data / "urfall-cam0-falls.csv") if keep(number(g.video))]
+    videos = [v for v in sorted(data.glob("*-cam0.mp4")) if keep(number(v.stem))]
     pred, seconds = [], 0.0
     for v in videos:
         cap = cv2.VideoCapture(str(v))
@@ -85,7 +89,7 @@ def main() -> None:
         pred += got
         print(v.name, [f"{p.type}@{p.start:.1f}" for p in got], flush=True)
     report = evaluate(gt, pred, seconds / 3600, same_incident={"immobile": "fall"})
-    report.update(videos=len(videos), falls=len(gt), seconds=round(seconds, 1), analysis_fps=args.fps)
+    report.update(videos=len(videos), falls=len(gt), seconds=round(seconds, 1), analysis_fps=args.fps, split=args.split)
     Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=1))
     print(json.dumps(report, ensure_ascii=False, indent=1))
 

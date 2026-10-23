@@ -1,4 +1,5 @@
 """Конвейер одной камеры: детекторы → трекер → правила по зонам → менеджер событий."""
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from .tracking import IouTracker
 from .types import PERSON, Detection, Track
 
 ZONE_TRACK = 0          # «трек» для событий уровня зоны: огонь, дым
+_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="infer")
 
 
 @dataclass
@@ -35,14 +37,17 @@ class CameraPipeline:
         return any(rule_type in z.exclude and z.contains(track.det.foot) for z in self.cfg.scene.zones)
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
-        dets: list[Detection] = []
+        """Все модели кадра считаются параллельно: ONNX Runtime и pytpu отпускают GIL на время инференса,
+        поэтому несколько сетей одного кадра идут на ускорителе одновременно."""
         prepared: dict[int, tuple] = {}
         for d in self.detectors:
-            size = d.spec.imgsz
-            if size not in prepared:
-                prepared[size] = letterbox(frame, size)
-            dets.extend(d(frame, prepared[size]))
-        return dets
+            if d.spec.imgsz not in prepared:
+                prepared[d.spec.imgsz] = letterbox(frame, d.spec.imgsz)
+        if len(self.detectors) == 1:
+            d = self.detectors[0]
+            return d(frame, prepared[d.spec.imgsz])
+        futures = [_POOL.submit(d, frame, prepared[d.spec.imgsz]) for d in self.detectors]
+        return [det for f in futures for det in f.result()]
 
     def step(self, detections: list[Detection], now: float, wall: datetime | None = None) -> FrameResult:
         """Обработка уже готовых детекций — так же работает режим воспроизведения детекций с LinQ."""

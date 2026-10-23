@@ -30,32 +30,64 @@ def standing_height(track: Track) -> float:
     return float(np.percentile([d.height for _, d in track.history], 75))
 
 
+def is_upright(det: Detection) -> bool:
+    angle = torso_angle(det)
+    if angle is not None:
+        return angle < 35 and det.height > det.width * 1.1
+    return det.height > det.width * 1.3
+
+
+def lying_like(det: Detection) -> bool:
+    """Лежит или почти лежит. Если корпус виден — только по его наклону: сидящий человек даёт широкую рамку,
+    но вертикальный корпус. Без точек скелета — по форме рамки."""
+    angle = torso_angle(det)
+    if angle is not None:
+        return angle >= 50
+    return det.width > det.height * 1.05
+
+
 @register("fall", "Падение человека")
 class Fall:
-    def __init__(self, drop_ratio: float = 0.35, drop_window_s: float = 1.5, memory_s: float = 6.0):
-        self.drop_ratio = drop_ratio
+    """Падение — резкое опускание, после которого человек остаётся внизу.
+
+    1. Резкость: из вертикальной позы за drop_window_s голова (верх рамки) опускается хотя бы на head_drop
+       роста, а высота рамки сжимается до shrink от исходной. Медленно сесть или лечь — не падение.
+    2. Остался внизу: hold_s после этого момента ни одного кадра с вертикальной позой. Наклонился за предметом
+       или присел — через секунду снова стоит, тревоги нет. Упал — лежит, тревога через ~2 с после падения.
+    Пороги подобраны на нечётных записях UR Fall, качество проверяется на чётных (eval/urfall.py --split).
+    """
+
+    def __init__(self, drop_window_s: float = 1.0, head_drop: float = 0.35, shrink: float = 0.75,
+                 hold_s: float = 0.6, memory_s: float = 10.0):
         self.drop_window_s = drop_window_s
+        self.head_drop = head_drop
+        self.shrink = shrink
+        self.hold_s = hold_s
         self.memory_s = memory_s
 
-    def _dropped_recently(self, track: Track, now: float) -> bool:
-        hist = track.window(now, self.memory_s)
-        if len(hist) < 3:
-            return False
-        ref = standing_height(track)
-        # ищем резкое опускание центра рамки за короткое окно
+    def fall_moment(self, hist: list) -> float | None:
+        moment = None
         for i, (t0, d0) in enumerate(hist):
+            if not is_upright(d0):
+                continue
             for t1, d1 in hist[i + 1:]:
                 if t1 - t0 > self.drop_window_s:
                     break
-                if d1.center[1] - d0.center[1] > self.drop_ratio * ref and not is_horizontal(d0):
-                    return True
-        return False
+                if (d1.box[1] - d0.box[1]) >= self.head_drop * d0.height and d1.height <= self.shrink * d0.height:
+                    moment = t1                      # последний подходящий момент: после него не вставал
+                    break
+        return moment
 
     def evaluate(self, track: Track, ctx: RuleContext) -> Signal | None:
-        det = track.det
-        if is_horizontal(det) and self._dropped_recently(track, ctx.now):
-            return Signal(0.9, {"torso_angle": round(torso_angle(det) or 0.0)})
-        return None
+        hist = track.window(ctx.now, self.memory_s)
+        if len(hist) < 3:
+            return None
+        t_fall = self.fall_moment(hist)
+        if t_fall is None or ctx.now - t_fall < self.hold_s:
+            return None
+        if any(is_upright(d) for t, d in hist if t > t_fall + 0.3):
+            return None                              # поднялся — не падение
+        return Signal(0.9, {"torso_angle": round(torso_angle(track.det) or 0.0)})
 
 
 @register("immobile", "Неподвижное лежание")

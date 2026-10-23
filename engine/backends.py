@@ -1,9 +1,15 @@
 """Бэкенды инференса. Все возвращают output0 модели YOLO, дальше общий постпроцессинг."""
 import contextlib
+import os
+import threading
 import time
 from typing import Protocol
 
 import numpy as np
+
+# Пока не проверено на стенде, можно ли звать несколько программ одного TPU из разных потоков, вызовы
+# сериализуются. LINQ_TPU_PARALLEL=1 снимает блокировку — так меряем выигрыш от параллельных программ.
+_TPU_LOCK = None if os.environ.get("LINQ_TPU_PARALLEL") == "1" else threading.Lock()
 
 
 class InferenceBackend(Protocol):
@@ -57,7 +63,11 @@ class LinqTpuBackend:
 
     def run(self, tensor: np.ndarray) -> np.ndarray:
         t0 = time.perf_counter()
-        feats = self._inference.sync({self.input_name: tensor})
+        if _TPU_LOCK is not None:
+            with _TPU_LOCK:
+                feats = self._inference.sync({self.input_name: tensor})
+        else:
+            feats = self._inference.sync({self.input_name: tensor})
         self.last_tpu_ms = (time.perf_counter() - t0) * 1e3
         return self._tail.run(None, {k: feats[k] for k in self._tail_inputs})[0]
 

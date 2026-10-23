@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from engine.config import CONFIRM_DEFAULT, SEVERITY_DEFAULT, load_cameras, parse_camera
 from engine.rules import RULES
 
+from .notify import Notifier
 from .review import PRESETS, ReviewManager
 from .store import STATUSES, EventStore
 from .workers import SourceProcessor, VideoWorker, load_detectors
@@ -71,8 +72,11 @@ def _resolve(source: str) -> str:
     return str(DATA / "videos" / source)
 
 
+notifier = Notifier(MEDIA)
+
+
 def start_camera(cfg) -> None:
-    proc = SourceProcessor(cfg, _models_for(cfg), store, MEDIA, hub.publish)
+    proc = SourceProcessor(cfg, _models_for(cfg), store, MEDIA, hub.publish, notifier)
     processors[cfg.id] = proc
     if cfg.source != "webcam":
         w = VideoWorker(proc, _resolve(cfg.source))
@@ -291,6 +295,7 @@ def summary(hours: float = 12):
 def metrics():
     return {"models": [d.stats() for d in detectors.values()],
             "cameras": [p.stats() for p in processors.values()],
+            "notify": {"channels": notifier.channels, "levels": sorted(notifier.levels), "recent": notifier.history[-10:]},
             "gpu_backend": next(iter(detectors.values())).backend.name if detectors else None}
 
 
