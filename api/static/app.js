@@ -1,6 +1,11 @@
 "use strict";
 const SEV = { critical: "критично", high: "высокий", medium: "средний" };
 const ST = { new: "новое", confirmed: "подтверждено", false: "ложное", sent_to_master: "передано мастеру", resolved: "устранено" };
+const DETAIL = {
+  torso_angle: "угол корпуса, °", distance_m: "расстояние, м", gap_heights: "зазор, в ростах человека",
+  speed_mps: "скорость, м/с", heights_per_s: "скорость, ростов/с", still_s: "неподвижен, с", vehicle: "техника",
+  forklift: "погрузчик", machinery: "спецтехника",
+};
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const api = (p, o) => fetch(p, o).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
@@ -246,7 +251,7 @@ function fillModal(ev) {
   $("#m-sev").outerHTML = `<span class="pill ${esc(ev.severity)}" id="m-sev">${esc(SEV[ev.severity] || ev.severity)}</span>`;
   $("#m-status").outerHTML = `<span class="pill st-${esc(ev.status)}" id="m-status">${esc(ST[ev.status] || ev.status)}</span>`;
   $("#m-title").textContent = ev.title;
-  const det = Object.entries(ev.details || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
+  const det = Object.entries(ev.details || {}).map(([k, v]) => `${DETAIL[k] || k}: ${DETAIL[v] || v}`).join(", ");
   $("#m-kv").innerHTML = `<dt>Камера</dt><dd>${esc(ev.camera_title)}</dd><dt>Зона</dt><dd>${esc(ev.zone_title)}</dd>
     <dt>Начало</dt><dd>${fmtTime(ev.started_at, true)}</dd><dt>Длительность</dt><dd>${fmtDur(ev.duration_s)}${ev.closed ? "" : " · идёт"}</dd>
     <dt>Тревога через</dt><dd>${ev.latency_s ?? "—"} с после начала</dd><dt>Уверенность</dt><dd>${Math.round((ev.score || 0) * 100)}%</dd>

@@ -11,7 +11,7 @@ dependencies = [
 [project.optional-dependencies]
 # декодирование видео и CPU-инференс для разработки без стенда
 video = ["opencv-python-headless>=4.9", "onnxruntime>=1.18"]
-api = ["fastapi>=0.110", "uvicorn>=0.29"]
+api = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 dev = ["pytest>=8.0", "httpx>=0.27", "fastapi>=0.110"]
 
 [tool.pytest.ini_options]

@@ -125,6 +125,9 @@ class EventManager:
         for e in pool:
             if e.zone != zone or e.type != rule_type:
                 continue
+            if track_id == 0 and e.track_id == 0:      # событие уровня зоны (огонь, дым): склеиваем без сверки рамок
+                best = e
+                break
             v = iou(np.asarray(e.box), det.box)
             if v >= best_iou:
                 best, best_iou = e, v

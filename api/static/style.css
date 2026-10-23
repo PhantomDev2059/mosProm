@@ -119,7 +119,7 @@ td img{width:72px;aspect-ratio:16/10;object-fit:cover;border-radius:3px;display:
 .bar .fill{height:100%;background:var(--hazard)}
 .bar .v{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .heat{display:grid;grid-template-columns:34px repeat(24,minmax(0,1fr));gap:2px;font:500 10.5px/1 var(--f-mono);color:var(--muted)}
-.heat .c{aspect-ratio:1;border-radius:2px;background:var(--surface-2)}
+.heat .c{height:22px;border-radius:2px;background:var(--surface-2)}
 .heat .h{text-align:center;padding-bottom:3px}
 .heat .d{display:flex;align-items:center}
 
