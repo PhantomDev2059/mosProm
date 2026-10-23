@@ -229,6 +229,19 @@ class ReviewManager:
             r["details"] = json.loads(r["details"] or "{}")
         return rows
 
+    def delete(self, job_id: str) -> bool:
+        if job_id in self.jobs and self.jobs[job_id].is_alive():
+            raise ValueError("разбор ещё идёт — дождитесь окончания")
+        items = self.store.rows("SELECT clip, snapshot FROM review_items WHERE job=?", (job_id,))
+        for r in items:
+            for url in (r["clip"], r["snapshot"]):
+                if url:
+                    (self.media / Path(url).name).unlink(missing_ok=True)
+        self.store.exec("DELETE FROM review_items WHERE job=?", (job_id,))
+        self.store.exec("DELETE FROM review_jobs WHERE id=?", (job_id,))
+        self.jobs.pop(job_id, None)
+        return True
+
     def set_verdict(self, item_id: str, verdict: str | None, person: str | None, note: str | None) -> dict | None:
         if verdict is not None and verdict not in ("pending", "confirmed", "rejected"):
             raise ValueError("вердикт: pending, confirmed или rejected")

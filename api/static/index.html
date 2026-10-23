@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=6">
+<link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
 <header class="top">
@@ -71,7 +71,8 @@
         <div id="rv-body" hidden>
           <div class="rv-head">
             <div><h2 id="rv-h-title"></h2><p class="muted" id="rv-h-meta"></p></div>
-            <div class="btns"><a class="btn" id="rv-report" target="_blank" rel="noopener">Отчёт по смене</a><a class="btn" id="rv-csv">CSV</a></div>
+            <div class="btns"><a class="btn" id="rv-report" target="_blank" rel="noopener">Отчёт по смене</a><a class="btn" id="rv-csv">CSV</a>
+              <button class="btn" type="button" id="rv-del">Удалить</button></div>
           </div>
           <div class="rv-progress" id="rv-progress" hidden><div class="bar"><i id="rv-bar"></i></div><span class="mono small" id="rv-ptext"></span></div>
           <div class="rv-filters">
@@ -263,6 +264,6 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/app.js?v=6"></script>
+<script src="/static/app.js?v=9"></script>
 </body>
 </html>

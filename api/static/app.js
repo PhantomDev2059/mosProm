@@ -486,8 +486,10 @@ function qBlock(tag, m) {
 }
 async function loadQuality() {
   const q = await api("/api/quality");
-  const f = q.fall;
-  $("#q-fall").innerHTML = f ? `<div class="q-cols">${qBlock("настройка порогов · нечётные записи", f.tune)}${qBlock("проверка · чётные записи, система их не видела", f.test)}</div>
+  const f = q.fall, ml = q.fall_ml;
+  $("#q-fall").innerHTML = f ? `<div class="q-cols">${qBlock("правило · проверка на чётных записях, система их не видела", f.test)}${ml ? qBlock("классификатор на позе · та же проверка", ml.test) : ""}</div>
+    <p class="muted small">Оба метода настраивались только на нечётных записях. Правило (используется по умолчанию) ошибается реже, классификатор находит больше падений, но чаще зовёт зря.
+    В кейсе точность важнее количества сценариев, поэтому в работе — правило. На настроечной половине правило дало F1 ${f.tune.f1.toFixed(2)}${ml ? `, классификатор — ${ml.tune.f1.toFixed(2)}` : ""}: разница с проверкой показывает, насколько мал набор (15 падений на половину).</p>
     <p class="muted small">По всему набору: ложных тревог в час — ${f.all_report.false_alarms_per_hour ?? "—"}, медиана времени до тревоги — ${f.all_report.latency_median_s ?? "—"} с,
     взвешенное покрытие времени — ${pct(f.all_report.weighted_time_coverage)}. Правило: резкое опускание головы ≥ ${Math.round(f.best_params.head_drop * 100)}% роста за ${f.best_params.drop_window_s} с,
     подтверждение ${f.confirm_s} с. Перебрано вариантов: ${f.grid_size}. Ограничение набора: камера в углу комнаты и разрешение 320×240 — на заводских камерах человек крупнее.</p>`
@@ -535,6 +537,20 @@ async function refreshJobs() {
   }
 }
 $("#rv-jobs").addEventListener("click", (e) => { const li = e.target.closest("li[data-job]"); if (li) selectJob(li.dataset.job); });
+$("#rv-del").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  if (btn.dataset.confirm !== RV.job) {             // подтверждение вторым нажатием, без системных диалогов
+    btn.dataset.confirm = RV.job; btn.textContent = "Точно удалить?";
+    setTimeout(() => { btn.dataset.confirm = ""; btn.textContent = "Удалить"; }, 3000);
+    return;
+  }
+  const r = await fetch(`/api/review/jobs/${encodeURIComponent(RV.job)}`, { method: "DELETE" });
+  btn.dataset.confirm = ""; btn.textContent = "Удалить";
+  if (!r.ok) { $("#rv-msg").textContent = "Разбор ещё идёт — удалить можно после окончания."; return; }
+  RV.job = null; $("#rv-body").hidden = true; $("#rv-empty").hidden = false;
+  await refreshJobs();
+  if (RV.jobs.length) selectJob(RV.jobs[0].id);
+});
 async function selectJob(id) {
   RV.job = id; RV.cat = ""; RV.verdict = ""; RV.cur = 0;
   $("#rv-empty").hidden = true; $("#rv-body").hidden = false;
@@ -681,7 +697,12 @@ async function loadLinq() {
 
 /* ---------- старт ---------- */
 (async function init() {
-  state.rules = await api("/api/rules");
+  try {
+    state.rules = await api("/api/rules");
+  } catch {                                    // сервис перезапускается — пробуем снова, не оставляя пустой экран
+    setTimeout(init, 2000);
+    return;
+  }
   await loadCameras();
   setupFilters();
   const recent = await api("/api/events?limit=80&hours=24");

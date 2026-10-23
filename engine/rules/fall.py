@@ -54,11 +54,12 @@ class Fall:
        роста, а высота рамки сжимается до shrink от исходной. Медленно сесть или лечь — не падение.
     2. Остался внизу: hold_s после этого момента ни одного кадра с вертикальной позой. Наклонился за предметом
        или присел — через секунду снова стоит, тревоги нет. Упал — лежит, тревога через ~2 с после падения.
-    Пороги подобраны на нечётных записях UR Fall, качество проверяется на чётных (eval/urfall.py --split).
+    Пороги подобраны перебором на нечётных записях UR Fall (eval/sweep_fall.py), качество — на чётных.
+    shrink=1.5 фактически отключает требование сжатия рамки: на проверке оно не помогло.
     """
 
-    def __init__(self, drop_window_s: float = 0.8, head_drop: float = 0.45, shrink: float = 0.75,
-                 hold_s: float = 0.0, memory_s: float = 10.0):
+    def __init__(self, drop_window_s: float = 0.8, head_drop: float = 0.45, shrink: float = 1.5,
+                 hold_s: float = 0.3, memory_s: float = 10.0):
         self.drop_window_s = drop_window_s
         self.head_drop = head_drop
         self.shrink = shrink

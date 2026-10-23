@@ -343,6 +343,14 @@ def review_jobs():
     return review.jobs_list()
 
 
+@app.delete("/api/review/jobs/{job_id}")
+def review_delete(job_id: str):
+    try:
+        return {"ok": review.delete(job_id)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @app.get("/api/review/jobs/{job_id}/items")
 def review_items(job_id: str):
     return review.items(job_id)
@@ -408,6 +416,7 @@ def quality():
             return None
 
     sweep = load(DATA / "eval" / "fall_sweep.json")
+    fall_ml = load(DATA / "eval" / "fall_ml.json")
     quant = {}
     for folder, tag in ((MODELS / "tpu", "v1"), (MODELS / "tpu_v2", "v2")):
         for p in folder.glob("*_report.json"):
@@ -420,7 +429,7 @@ def quality():
     res = Path("/workspace/linq/train/ppe_v8s_test")
     if (res / "metrics.json").exists():
         ppe = load(res / "metrics.json")
-    return {"fall": sweep, "quant": quant, "ppe": ppe}
+    return {"fall": sweep, "fall_ml": fall_ml, "quant": quant, "ppe": ppe}
 
 
 @app.get("/api/bench")
