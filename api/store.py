@@ -35,14 +35,14 @@ class EventStore:
     def insert(self, row: dict) -> None:
         cols = ", ".join(row)
         marks = ", ".join("?" for _ in row)
-        vals = [json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for v in row.values()]
+        vals = [json.dumps(v, ensure_ascii=False, default=float) if isinstance(v, (dict, list)) else v for v in row.values()]
         with self.lock:
             self.db.execute(f"INSERT OR REPLACE INTO events ({cols}) VALUES ({marks})", vals)
             self.db.commit()
 
     def update(self, event_id: str, **fields) -> None:
         sets = ", ".join(f"{k} = ?" for k in fields)
-        vals = [json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else v for v in fields.values()]
+        vals = [json.dumps(v, ensure_ascii=False, default=float) if isinstance(v, (dict, list)) else v for v in fields.values()]
         with self.lock:
             self.db.execute(f"UPDATE events SET {sets} WHERE id = ?", [*vals, event_id])
             self.db.commit()

@@ -32,20 +32,44 @@ def head_outputs(model: onnx.ModelProto) -> list[str]:
     return outs
 
 
-def calibration_frames(videos: Path, count: int, size: int) -> np.ndarray:
+def calibration_frames(videos: Path, count: int, size: int, offset: float = 0.5) -> np.ndarray:
+    """Равномерная выборка кадров из роликов камер. offset сдвигает сетку: у калибровки и проверки кадры разные."""
     files = sorted(videos.glob("cam_*.mp4")) or sorted(videos.glob("*.mp4"))
-    per_file = max(1, count // len(files))
+    per_file = max(1, -(-count // len(files)))
     tensors = []
     for f in files:
         cap = cv2.VideoCapture(str(f))
         n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
         for i in range(per_file):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int((i + 0.5) * n / per_file))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int((i + offset) * n / per_file))
             ok, frame = cap.read()
             if ok:
                 tensors.append(letterbox(frame, size)[0])
         cap.release()
     return np.concatenate(tensors[:count], 0)
+
+
+def smart_frames(onnx_path: str, videos: Path, count: int, size: int, conf: float = 0.25) -> np.ndarray:
+    """Половина кадров — где исходная модель уверенно видит свои объекты, половина — обычные.
+
+    Узкие детекторы (сигареты, огонь) иначе калибруются почти на пустых кадрах и после квантования теряют
+    именно те активации, ради которых существуют.
+    """
+    import onnxruntime as ort
+
+    pool = calibration_frames(videos, count * 4, size, offset=0.3)
+    sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+    name = sess.get_inputs()[0].name
+    peak = []
+    for x in pool:
+        out = sess.run(None, {name: x[None]})[0][0]          # (C, N)
+        peak.append(float(out[4:].max()))                     # лучший балл класса (для pose — уверенность человека)
+    order = np.argsort(peak)[::-1]
+    rich = [i for i in order if peak[i] >= conf][: count // 2]
+    rest = [i for i in range(len(pool)) if i not in set(rich)]
+    rng = np.random.default_rng(0)
+    plain = list(rng.choice(rest, size=min(count - len(rich), len(rest)), replace=False))
+    return pool[sorted(rich + plain)]
 
 
 def main() -> None:
@@ -57,6 +81,8 @@ def main() -> None:
     ap.add_argument("--calib", type=int, default=64)
     ap.add_argument("--preset", choices=["o5", "o1"], default="o5")
     ap.add_argument("--cut", nargs="*", help="имена тензоров среза вместо автоматического поиска")
+    ap.add_argument("--smart", action="store_true", help="калибровка с упором на кадры, где модель видит свои объекты")
+    ap.add_argument("--finetune", type=int, default=0, help="эпох fine_tune_torch для порогов квантования")
     args = ap.parse_args()
 
     from tpu_framework import O1, O5, TPU_H1M, Network, QuantizedModel, RegularModel, TpuProgram, compiler
@@ -79,10 +105,19 @@ def main() -> None:
 
     head = preliminary_model_conditioning(head)
     size = head.graph.input[0].type.tensor_type.shape.dim[2].dim_value
-    calib = calibration_frames(Path(args.videos), args.calib, size)
-    print(f"[2/4] калибровка на {len(calib)} кадрах камер", flush=True)
+    calib = (smart_frames(args.onnx, Path(args.videos), args.calib, size) if args.smart
+             else calibration_frames(Path(args.videos), args.calib, size))
+    print(f"[2/4] калибровка на {len(calib)} кадрах камер{' (smart)' if args.smart else ''}", flush=True)
     regular = RegularModel(model=head)
     thresholds = regular.calibrate_torch(calibration_data={input_name: calib}, samplewise_percentile=99.9)
+    if args.finetune:
+        t_ft = time.time()
+        thresholds = regular.fine_tune_torch(thresholds=thresholds, fine_tuning_data={input_name: calib},
+                                             fine_tuning_epochs=args.finetune)
+        report["finetune_epochs"] = args.finetune
+        report["finetune_s"] = round(time.time() - t_ft, 1)
+        print(f"   fine_tune_torch: {args.finetune} эпох за {report['finetune_s']} с", flush=True)
+    report["smart_calib"] = bool(args.smart)
     RegularModel.dump_thresholds(str(out / f"{args.name}_thresholds.json"), thresholds)
     qm_name = f"{args.name}.qm.onnx"
     regular.quantize(thresholds).save(file_dir=str(out), file_name=qm_name, io_params_name=f"{args.name}_scales.json")

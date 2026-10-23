@@ -125,7 +125,7 @@ class ReviewJob(threading.Thread):
             "INSERT OR REPLACE INTO review_items (id, job, type, title, severity, start_s, end_s, score, rank, clip, snapshot, details)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (eid, self.job_id, ev.type, ev.title, ev.severity, round(ev.started_at, 2), round(end, 2), round(ev.score, 3),
-             round(rank, 3), f"/media/{clip_name}", f"/media/{snap_name}", json.dumps(ev.details, ensure_ascii=False)))
+             round(rank, 3), f"/media/{clip_name}", f"/media/{snap_name}", json.dumps(ev.details, ensure_ascii=False, default=float)))
 
     # --- обработка ---
     def run(self) -> None:

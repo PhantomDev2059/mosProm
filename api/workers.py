@@ -1,5 +1,6 @@
 """Обработка источников: видеофайлы и RTSP в отдельных потоках, вебкамера браузера — по кадру."""
 import json
+import logging
 import subprocess
 import threading
 import time
@@ -19,6 +20,8 @@ from engine.pipeline import CameraPipeline, FrameResult
 from engine.render import draw
 
 from .store import EventStore
+
+log = logging.getLogger("linqguard")
 
 CLIP_PRE_S = 4.0       # секунд до подтверждения нарушения во фрагменте
 CLIP_POST_S = 4.0      # и после
@@ -210,7 +213,10 @@ class VideoWorker(threading.Thread):
                 if frame.shape[1] > 1280:
                     scale = 1280 / frame.shape[1]
                     frame = cv2.resize(frame, (1280, round(frame.shape[0] * scale)))
-                self.proc.process(frame, loop_offset + video_t)
+                try:
+                    self.proc.process(frame, loop_offset + video_t)
+                except Exception:                               # один сбойный кадр не должен останавливать камеру
+                    log.exception("камера %s: ошибка обработки кадра", self.proc.cfg.id)
             cap.release()
             loop_offset += video_t + 1.0
             if not self.proc.cfg.loop and is_file:

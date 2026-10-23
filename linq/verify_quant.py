@@ -43,6 +43,7 @@ def main() -> None:
     ap.add_argument("--models", default="/workspace/linq/models")
     ap.add_argument("--videos", default="/workspace/linq/data/videos")
     ap.add_argument("--frames", type=int, default=40)
+    ap.add_argument("--tpu-dir", default=None, help="папка с результатами compile_tpu (по умолчанию models/tpu)")
     args = ap.parse_args()
 
     import torch
@@ -53,7 +54,7 @@ def main() -> None:
     reg = json.loads((models / "registry.json").read_text())[args.name]
     class_map = {int(k): v for k, v in reg["class_map"].items()}
     conf = reg.get("conf", 0.4)
-    tpu = models / "tpu"
+    tpu = Path(args.tpu_dir) if args.tpu_dir else models / "tpu"
 
     full = ort.InferenceSession(reg["path"], providers=["CPUExecutionProvider"])
     tail = ort.InferenceSession(str(tpu / f"{args.name}_tail.onnx"), providers=["CPUExecutionProvider"])
@@ -67,7 +68,7 @@ def main() -> None:
     layer_to_orig = {v: k for k, v in out_anchor.items()}
     input_name = full.get_inputs()[0].name
 
-    frames = calibration_frames(Path(args.videos), args.frames, 640)
+    frames = calibration_frames(Path(args.videos), args.frames, 640, offset=0.85)   # не те кадры, что в калибровке
     shape = (int(frames.shape[2]), int(frames.shape[3]))
     tp = fp = fn = 0
     ious, kpt_err = [], []

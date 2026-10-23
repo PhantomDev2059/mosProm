@@ -107,7 +107,7 @@ class VehicleProximity:
             h = max(person.height, 1.0)
             if abs(person.box[3] - v.det.box[3]) > self.depth_tolerance * h:
                 continue
-            gap = max(0.0, max(person.box[0], v.det.box[0]) - min(person.box[2], v.det.box[2])) / h
+            gap = float(max(0.0, max(person.box[0], v.det.box[0]) - min(person.box[2], v.det.box[2])) / h)
             if gap < self.min_gap_heights:
                 return Signal(1.0 - gap / self.min_gap_heights, {"gap_heights": round(gap, 2), "vehicle": v.cls})
         return None
