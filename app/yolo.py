@@ -39,6 +39,26 @@ def gather_levels(meta, tensors):
     return [np.concatenate([tensors[box], tensors[cls]], axis=1) for box, cls in meta['levels']]
 
 
+def gather_kpts(meta, tensors):
+    """Для pose-модели: список [1, 17*3, H, W] по уровням, иначе None."""
+    return [tensors[name] for name in meta['kpt_levels']] if 'kpt_levels' in meta else None
+
+
+# пары точек COCO-скелета: 0 нос, 1-2 глаза, 3-4 уши, 5-6 плечи, 7-8 локти, 9-10 кисти,
+# 11-12 бёдра, 13-14 колени, 15-16 стопы
+SKELETON = [(15, 13), (13, 11), (16, 14), (14, 12), (11, 12), (5, 11), (6, 12), (5, 6), (5, 7),
+            (6, 8), (7, 9), (8, 10), (1, 2), (0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 6)]
+
+
+def merge(results):
+    """Детекции нескольких моделей в один список: людей берём из pose-модели (у них есть скелет),
+    остальные классы — из детектора, чтобы не было двойных рамок на человеке."""
+    pose = [d for dets in results for d in dets if 'kpts' in d]
+    if not pose:
+        return [d for dets in results for d in dets]
+    return pose + [d for dets in results for d in dets if 'kpts' not in d and d['name'] != 'person']
+
+
 def _nms(boxes, scores, iou):
     order = scores.argsort()[::-1]
     keep = []
@@ -57,11 +77,13 @@ def _nms(boxes, scores, iou):
 
 
 def postprocess(outputs, strides, letterbox_info, orig_size, conf=0.25, iou=0.45,
-                names=COCO_NAMES, max_det=300):
-    """outputs: список [1, 64 + nc, H, W] по возрастанию stride -> список детекций в координатах оригинала."""
+                names=COCO_NAMES, max_det=300, kpts=None):
+    """outputs: список [1, 64 + nc, H, W] по возрастанию stride -> список детекций в координатах оригинала.
+
+    kpts (pose): список [1, K*3, H, W]; точка = ((raw_xy * 2 + номер ячейки) * stride, sigmoid(raw_v))."""
     scale, pad_x, pad_y = letterbox_info
-    all_boxes, all_scores, all_cls = [], [], []
-    for out, stride in zip(outputs, strides):
+    all_boxes, all_scores, all_cls, all_kpts = [], [], [], []
+    for level, (out, stride) in enumerate(zip(outputs, strides)):
         _, c, h, w = out.shape
         out = out.reshape(c, h * w)
         logits = out[64:]
@@ -81,6 +103,12 @@ def postprocess(outputs, strides, letterbox_info, orig_size, conf=0.25, iou=0.45
         all_boxes.append(boxes)
         all_scores.append(score[idx])
         all_cls.append(best[idx])
+        if kpts is not None:
+            k = kpts[level].reshape(-1, 3, h * w)[:, :, idx]          # [K, 3, n]
+            kx = (k[:, 0] * 2.0 + (idx % w)) * stride
+            ky = (k[:, 1] * 2.0 + (idx // w)) * stride
+            kv = 1.0 / (1.0 + np.exp(-k[:, 2]))
+            all_kpts.append(np.stack([kx, ky, kv], -1).transpose(1, 0, 2))  # [n, K, 3]
     if not all_boxes:
         return []
     boxes, scores, cls = np.concatenate(all_boxes), np.concatenate(all_scores), np.concatenate(all_cls)
@@ -90,6 +118,13 @@ def postprocess(outputs, strides, letterbox_info, orig_size, conf=0.25, iou=0.45
     boxes = boxes[keep]
     boxes[:, [0, 2]] = np.clip((boxes[:, [0, 2]] - pad_x) / scale, 0, ow)
     boxes[:, [1, 3]] = np.clip((boxes[:, [1, 3]] - pad_y) / scale, 0, oh)
-    return [{'cls': int(c), 'name': names[c] if c < len(names) else str(c), 'conf': round(float(s), 3),
+    dets = [{'cls': int(c), 'name': names[c] if c < len(names) else str(c), 'conf': round(float(s), 3),
              'box': [round(float(v), 1) for v in b]}
             for b, s, c in zip(boxes, scores[keep], cls[keep])]
+    if kpts is not None:
+        pts = np.concatenate(all_kpts)[keep]
+        pts[:, :, 0] = (pts[:, :, 0] - pad_x) / scale
+        pts[:, :, 1] = (pts[:, :, 1] - pad_y) / scale
+        for d, p in zip(dets, pts):
+            d['kpts'] = [[round(float(x), 1), round(float(y), 1), round(float(v), 2)] for x, y, v in p]
+    return dets

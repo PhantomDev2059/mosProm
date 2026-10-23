@@ -1,5 +1,9 @@
 const $ = (s) => document.querySelector(s);
 const state = { mode: 'tpu', conf: 0.3, video: null, statsTimer: null };
+const SKELETON = [[15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
+  [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]];
+const poseOn = () => ($('#pose').checked ? 1 : 0);
+$('#pose').onchange = () => state.video && startVideo(state.video);
 const PALETTE = {};
 const colorFor = (name) => PALETTE[name] ||= name === 'person' ? '#ff5d5d' : `hsl(${[...name].reduce((a, c) => a + c.charCodeAt(0) * 37, 0) % 360} 75% 60%)`;
 
@@ -45,6 +49,12 @@ function drawDetections(canvas, img, dets) {
   const lw = Math.max(2, Math.round(canvas.width / 400)), fs = Math.max(12, Math.round(canvas.width / 60));
   ctx.font = `600 ${fs}px system-ui`;
   for (const d of dets) {
+    if (d.kpts) {
+      const p = d.kpts.map(([x, y, v]) => (v > 0.5 ? [x, y] : null));
+      ctx.strokeStyle = '#50ffaa'; ctx.lineWidth = lw + 1;
+      for (const [a, b] of SKELETON) if (p[a] && p[b]) { ctx.beginPath(); ctx.moveTo(...p[a]); ctx.lineTo(...p[b]); ctx.stroke(); }
+      p.forEach((q, i) => { if (q) { ctx.fillStyle = [0, 9, 10].includes(i) ? '#ffc800' : '#fff'; ctx.beginPath(); ctx.arc(q[0], q[1], lw * 2, 0, 7); ctx.fill(); } });
+    }
     const [x1, y1, x2, y2] = d.box, c = colorFor(d.name);
     ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     const label = `${d.name} ${d.conf.toFixed(2)}`, tw = ctx.measureText(label).width + 8;
@@ -68,7 +78,7 @@ async function detectFile(file) {
   drawDetections(canvas, img, []);
   const fd = new FormData(); fd.append('file', file);
   try {
-    const r = await fetch(`/api/detect?mode=${state.mode}&conf=${state.conf}`, { method: 'POST', body: fd });
+    const r = await fetch(`/api/detect?mode=${state.mode}&conf=${state.conf}&pose=${poseOn()}`, { method: 'POST', body: fd });
     const res = await r.json();
     if (!r.ok) throw new Error(res.detail || r.statusText);
     drawDetections(canvas, img, res.detections);
@@ -113,7 +123,7 @@ function startVideo(info) {
     : `${info.name} · ${info.width}×${info.height}, ${info.fps} к/с, ${info.frames} кадров`;
   $('#s_tpu_l').textContent = state.mode === 'tpu' ? 'мс на TPU (из relay)' : 'мс CPU-инференса';
   $('#s_events').innerHTML = '<li class="muted">пока нет</li>'; $('#s_classes').innerHTML = ''; $('#s_err').textContent = '';
-  $('#vidstream').src = `/api/video/${info.id}/stream?mode=${state.mode}&fps=${$('#fps').value}&conf=${state.conf}&_=${Date.now()}`;
+  $('#vidstream').src = `/api/video/${info.id}/stream?mode=${state.mode}&fps=${$('#fps').value}&conf=${state.conf}&pose=${poseOn()}&_=${Date.now()}`;
   state.statsTimer = setInterval(pollStats, 1000);
   $('#videocard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }

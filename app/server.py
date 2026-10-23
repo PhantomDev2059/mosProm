@@ -26,11 +26,15 @@ sys.path.insert(0, str(ROOT / 'app'))
 sys.path.insert(0, str(ROOT / 'tools'))
 from linq_remote import load_env  # noqa: E402
 from tpu_client import RelayClient  # noqa: E402
-from yolo import gather_levels, letterbox, postprocess  # noqa: E402
+from yolo import SKELETON, gather_kpts, gather_levels, letterbox, merge, postprocess  # noqa: E402
 
 load_env()
 MODEL = os.environ.get('LINQ_MODEL', 'yolov8n_640')
+POSE_MODEL = os.environ.get('LINQ_POSE_MODEL', 'yolov8n_pose_640')
 META = json.loads((ROOT / 'models' / f'{MODEL}.json').read_text())
+METAS = {m: json.loads((ROOT / 'models' / f'{m}.json').read_text())
+         for m in (MODEL, POSE_MODEL) if (ROOT / 'models' / f'{m}.json').exists()}
+POSE = POSE_MODEL in METAS
 UPLOADS = ROOT / 'uploads'
 UPLOADS.mkdir(exist_ok=True)
 MAX_SIDE = 1280      # картинку ужимаем перед отправкой: по VPN ~4 Мбит/с
@@ -38,53 +42,93 @@ MAX_INFLIGHT = 8     # кадров видео одновременно «в п�
 
 relay = RelayClient(os.environ['LINQ_AMQP_HOST'], int(os.environ['LINQ_AMQP_PORT']), os.environ['LINQ_USER'])
 cpu_pool = ThreadPoolExecutor(max_workers=2)
-_cpu_session = None
+_cpu_sessions = {}
 _cpu_lock = threading.Lock()
 
 
-def cpu_session():
-    global _cpu_session
+def cpu_session(model):
     with _cpu_lock:
-        if _cpu_session is None:
+        if model not in _cpu_sessions:
             import onnxruntime as ort
-            _cpu_session = ort.InferenceSession(str(ROOT / 'models' / f'{MODEL}_cut.onnx'),
-                                                providers=['CPUExecutionProvider'])
-        return _cpu_session
+            _cpu_sessions[model] = ort.InferenceSession(str(ROOT / 'models' / f'{model}_cut.onnx'),
+                                                        providers=['CPUExecutionProvider'])
+        return _cpu_sessions[model]
 
 
-def detect_cpu(jpeg, conf):
+def models_for(pose):
+    return [MODEL] + ([POSE_MODEL] if pose and POSE else [])
+
+
+def detect_cpu(jpeg, conf, models):
     t0 = time.perf_counter()
     image = Image.open(io.BytesIO(jpeg))
     tensor, lb = letterbox(image, META['imgsz'])
     t1 = time.perf_counter()
-    outs = cpu_session().run(META['outputs'], {META['input']: tensor})
+    raw = {}
+    for m in models:
+        outs = cpu_session(m).run(METAS[m]['outputs'], {METAS[m]['input']: tensor})
+        raw[m] = dict(zip(METAS[m]['outputs'], outs))
     t2 = time.perf_counter()
-    dets = postprocess(gather_levels(META, dict(zip(META['outputs'], outs))), META['strides'], lb,
-                       image.size, conf=conf)
+    dets = merge([postprocess(gather_levels(METAS[m], raw[m]), METAS[m]['strides'], lb, image.size, conf=conf,
+                              kpts=gather_kpts(METAS[m], raw[m])) for m in models])
     t3 = time.perf_counter()
     return {'detections': dets, 'size': image.size,
             'timing': {'pre_ms': round((t1 - t0) * 1000, 1), 'cpu_ms': round((t2 - t1) * 1000, 1),
                        'post_ms': round((t3 - t2) * 1000, 1), 'roundtrip_ms': round((t3 - t0) * 1000, 1)}}
 
 
-def submit(jpeg, mode, conf):
+def submit(jpeg, mode, conf, pose=True):
+    models = models_for(pose)
     if mode == 'cpu':
-        return cpu_pool.submit(detect_cpu, jpeg, conf)
+        return cpu_pool.submit(detect_cpu, jpeg, conf, models)
     # pika не кодирует float в AMQP-заголовках — передаём строкой, relay делает float()
-    return relay.submit(jpeg, model=MODEL, conf=str(conf))
+    return relay.submit(jpeg, model=','.join(models), conf=str(conf))
 
 
 VEHICLES = {'car', 'truck', 'bus', 'motorcycle', 'train', 'bicycle'}
 
 
+VISIBLE = 0.5
+# сколько секунд нарушение должно длиться, чтобы стать событием (случайный кадр тревогу не вызывает)
+HOLD_S = {'02': 1.0, '03': 2.0, '04': 2.0, '07': 2.0}
+
+
+def _pt(kpts, i):
+    x, y, v = kpts[i]
+    return np.array([x, y]) if v > VISIBLE else None
+
+
+def pose_rules(person):
+    """Правила по скелету одного человека (COCO-точки: 0 нос, 5-6 плечи, 9-10 кисти, 11-12 бёдра)."""
+    k = person['kpts']
+    events = []
+    nose, ls, rs = _pt(k, 0), _pt(k, 5), _pt(k, 6)
+    if ls is not None and rs is not None:
+        shoulders = np.linalg.norm(ls - rs)
+    else:
+        shoulders = 0.25 * (person['box'][3] - person['box'][1])
+    if nose is not None and shoulders > 0:
+        for wrist in (_pt(k, 9), _pt(k, 10)):
+            if wrist is not None and np.linalg.norm(wrist - nose) < 0.45 * shoulders:
+                events.append({'code': '04', 'title': 'Курение? (кисть у рта)', 'level': 'warn'})
+                break
+    lh, rh = _pt(k, 11), _pt(k, 12)
+    if ls is not None and rs is not None and lh is not None and rh is not None:
+        torso = (lh + rh) / 2 - (ls + rs) / 2
+        if abs(torso[1]) < 0.6 * abs(torso[0]):  # корпус ближе к горизонтали, чем к вертикали
+            events.append({'code': '07', 'title': 'Человек лежит / падение', 'level': 'critical'})
+    return events
+
+
 def rules(dets):
-    """Демо-правила поверх COCO-детекций (заглушки под сценарии кейса, не финальная логика)."""
+    """Кандидаты в нарушения на одном кадре; подтверждение по времени (HOLD_S) — в потоке видео."""
     people = [d for d in dets if d['name'] == 'person']
     events = []
     if people and any(d['name'] == 'cell phone' for d in dets):
         events.append({'code': '03', 'title': 'Телефон в руках', 'level': 'warn'})
-    # 07 «лежит» по пропорциям рамки убрано: на веб-камере (голова и плечи крупно) давало ложные тревоги;
-    # падение будет по скелету из модели поз
+    for p in people:
+        if 'kpts' in p:
+            events += [e for e in pose_rules(p) if e['code'] not in {x['code'] for x in events}]
     for p in people:
         px, py, ph = (p['box'][0] + p['box'][2]) / 2, p['box'][3], p['box'][3] - p['box'][1]
         for v in dets:
@@ -116,7 +160,7 @@ def status():
         tpu = {'ok': True, **pong}
     except Exception as e:
         tpu = {'ok': False, 'error': relay.error or f'relay не отвечает ({type(e).__name__})'}
-    return {'tpu': tpu, 'model': MODEL, 'meta': META,
+    return {'tpu': tpu, 'model': MODEL, 'meta': META, 'pose': POSE_MODEL if POSE else None,
             'cpu_available': (ROOT / 'models' / f'{MODEL}_cut.onnx').exists()}
 
 
@@ -131,10 +175,10 @@ def to_jpeg(data, max_side=MAX_SIDE):
 
 
 @app.post('/api/detect')
-async def detect(file: UploadFile = File(...), mode: str = 'tpu', conf: float = 0.25):
+async def detect(file: UploadFile = File(...), mode: str = 'tpu', conf: float = 0.25, pose: bool = True):
     jpeg, scale = to_jpeg(await file.read())
     try:
-        res = submit(jpeg, mode, conf).result(timeout=60)
+        res = submit(jpeg, mode, conf, pose).result(timeout=60)
     except Exception as e:
         raise HTTPException(502, f'{type(e).__name__}: {e}')
     if 'error' in res:
@@ -214,7 +258,7 @@ def samples():
 
 
 @app.get('/api/bench')
-def bench(mode: str = 'tpu', n: int = 20, inflight: int = 4, sample: str = ''):
+def bench(mode: str = 'tpu', n: int = 20, inflight: int = 4, sample: str = '', pose: bool = False):
     """Замер: n запросов одной и той же картинки, до inflight одновременно."""
     folder = ROOT / 'app' / 'static' / 'samples'
     path = folder / sample if sample else next(iter(sorted(folder.glob('*.jpg'))), None)
@@ -226,7 +270,7 @@ def bench(mode: str = 'tpu', n: int = 20, inflight: int = 4, sample: str = ''):
     queue_ = deque()
     t0 = time.perf_counter()
     for i in range(n):
-        queue_.append(submit(jpeg, mode, 0.25))
+        queue_.append(submit(jpeg, mode, 0.25, pose))
         while len(queue_) >= inflight or (i == n - 1 and queue_):
             try:
                 res = queue_.popleft().result(timeout=60)
@@ -290,10 +334,24 @@ def color(cls):
     return tuple(int(c) for c in rng.integers(60, 255, 3))
 
 
-def draw(frame, dets, hud):
+def draw_skeleton(frame, kpts):
+    pts = [(int(x), int(y)) if v > VISIBLE else None for x, y, v in kpts]
+    for a, b in SKELETON:
+        if pts[a] and pts[b]:
+            cv2.line(frame, pts[a], pts[b], (80, 255, 170), 3, cv2.LINE_AA)
+    for i, p in enumerate(pts):
+        if p:
+            # кисти и нос крупнее — по ним считаются правила «курение» и «телефон у уха»
+            cv2.circle(frame, p, 7 if i in (0, 9, 10) else 4, (0, 200, 255) if i in (0, 9, 10) else (255, 255, 255),
+                       -1, cv2.LINE_AA)
+
+
+def draw(frame, dets, hud, pending=''):
     for d in dets:
         x1, y1, x2, y2 = map(int, d['box'])
         c = (40, 40, 230) if d['name'] == 'person' else color(d['cls'])
+        if 'kpts' in d:
+            draw_skeleton(frame, d['kpts'])
         cv2.rectangle(frame, (x1, y1), (x2, y2), c, 2)
         label = f"{d['name']} {d['conf']:.2f}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
@@ -301,11 +359,14 @@ def draw(frame, dets, hud):
         cv2.putText(frame, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.rectangle(frame, (0, 0), (frame.shape[1], 26), (20, 20, 20), -1)
     cv2.putText(frame, hud, (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 255, 120), 1, cv2.LINE_AA)
+    if pending:  # нарушение замечено, идёт отсчёт до подтверждения
+        cv2.rectangle(frame, (0, 26), (frame.shape[1], 52), (0, 90, 200), -1)
+        cv2.putText(frame, pending, (8, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
     return frame
 
 
 @app.get('/api/video/{vid}/stream')
-def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
+def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25, pose: bool = True):
     if vid not in VIDEOS:
         raise HTTPException(404)
     path, info = VIDEOS[vid]
@@ -356,16 +417,26 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
                 stats['tpu_ms'].append(t.get('tpu_ms', t.get('cpu_ms')))
             stats['processed'] += 1
             stats['classes'].update(d['name'] for d in res['detections'])
+            # нарушение становится событием, только если держится HOLD_S секунд подряд,
+            # и даёт ровно одно событие, пока не прекратится (пропало дольше 1.5 с)
+            pending = []
             for ev in rules(res['detections']):
-                # одно длящееся нарушение -> одно событие: повтор того же кода в течение 5 с не пишем
-                if sec - recent_events.get(ev['code'], -1e9) > 5:
+                s = recent_events.setdefault(ev['code'], {'since': sec, 'fired': False})
+                s['seen'] = sec
+                held = sec - s['since']
+                if not s['fired'] and held >= HOLD_S.get(ev['code'], 1.0):
+                    s['fired'] = True
                     stats['events'].appendleft({**ev, 't': round(sec, 1)})
-                recent_events[ev['code']] = sec
+                if not s['fired']:
+                    pending.append(f"{ev['code']}: {held:.1f}/{HOLD_S.get(ev['code'], 1.0):.0f}s")
+            for code in [c for c, s in recent_events.items() if sec - s['seen'] > 1.5]:
+                del recent_events[code]
             hud = (f"{mode.upper()} | {stats['fps']:.1f} FPS | e2e {t.get('roundtrip_ms', 0):.0f} ms"
                    + (f" | tpu {t['tpu_ms']:.0f} ms" if 'tpu_ms' in t else '')
                    + (f" | cpu {t['cpu_ms']:.0f} ms" if 'cpu_ms' in t else '')
                    + f" | t={sec:.1f}s")
-            out = draw(frame, res['detections'], hud)
+            fired = [f"ALERT {c}" for c, s in recent_events.items() if s['fired']]
+            out = draw(frame, res['detections'], hud, '  '.join(fired + pending))
             wait = 1.0 / max(fps, 0.1) - (time.perf_counter() - last_yield)
             if wait > 0:
                 time.sleep(wait)
@@ -399,7 +470,7 @@ def stream(vid: str, mode: str = 'tpu', fps: float = 10, conf: float = 0.25):
                     s = 960 / max(h, w)
                     frame = cv2.resize(frame, (round(w * s), round(h * s)))
                 jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])[1].tobytes()
-                inflight.append((frame, submit(jpeg, mode, conf), sec))
+                inflight.append((frame, submit(jpeg, mode, conf, pose), sec))
                 idx += 1
                 while len(inflight) >= MAX_INFLIGHT or (inflight and inflight[0][1].done()):
                     yield emit(*inflight.popleft())

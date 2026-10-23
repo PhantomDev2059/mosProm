@@ -26,9 +26,9 @@ COCO128 = 'https://github.com/ultralytics/assets/releases/download/v0.0.0/coco12
 
 
 def find_head_outputs(model):
-    """Последние Conv веток cv2 (бокс, 64 = 4x16 DFL) и cv3 (классы) головы Detect.
+    """Последние Conv веток головы: cv2 (бокс, 64 = 4x16 DFL), cv3 (классы), у Pose ещё cv4 (точки 17x3).
 
-    Возвращает [(box_name, box_shape), (cls_name, cls_shape)] для каждого уровня,
+    Возвращает {'box': (name, shape), 'cls': ..., ['kpt': ...]} для каждого уровня,
     по убыванию разрешения (stride 8, 16, 32)."""
     inferred = onnx.shape_inference.infer_shapes(model)
     shapes = {v.name: [d.dim_value for d in v.type.tensor_type.shape.dim]
@@ -39,12 +39,13 @@ def find_head_outputs(model):
         src = producer.get(node.input[0]) if node.input else None
         if node.op_type != 'Reshape' or src is None or src.op_type != 'Conv':
             continue
-        branch = 'box' if '/cv2.' in src.name else 'cls' if '/cv3.' in src.name else None
+        branch = {'/cv2.': 'box', '/cv3.': 'cls', '/cv4.': 'kpt'}
+        branch = next((v for k, v in branch.items() if k in src.name), None)
         if branch:
             shape = shapes[src.output[0]]
             levels.setdefault(shape[2], {})[branch] = (src.output[0], shape)
-    assert len(levels) == 3 and all(len(v) == 2 for v in levels.values()), f'голова не найдена: {levels}'
-    return [(levels[h]['box'], levels[h]['cls']) for h in sorted(levels, reverse=True)]
+    assert len(levels) == 3 and all({'box', 'cls'} <= set(v) for v in levels.values()), f'голова не найдена: {levels}'
+    return [levels[h] for h in sorted(levels, reverse=True)]
 
 
 def calibration_images(n):
@@ -76,15 +77,18 @@ def main():
     heads = find_head_outputs(model)
     print('голова:', heads)
 
-    outputs = [name_shape for level in heads for name_shape in level]
+    outputs = [level[b] for level in heads for b in ('box', 'cls', 'kpt') if b in level]
     cut_path = src.parent / f'{name}_cut.onnx'
     onnx.utils.extract_model(str(src), str(cut_path), [input_name], [o[0] for o in outputs])
     meta = {
         'program': f'{name}_b1_{args.preset}_h1m.tpu', 'input': input_name, 'imgsz': imgsz,
         'outputs': [o[0] for o in outputs], 'output_shapes': [o[1] for o in outputs],
-        'levels': [[box[0], cls[0]] for box, cls in heads],
-        'strides': [imgsz // box[1][2] for box, _ in heads], 'num_classes': heads[0][1][1][1],
+        'levels': [[level['box'][0], level['cls'][0]] for level in heads],
+        'strides': [imgsz // level['box'][1][2] for level in heads], 'num_classes': heads[0]['cls'][1][1],
     }
+    if 'kpt' in heads[0]:
+        meta['kpt_levels'] = [level['kpt'][0] for level in heads]
+        meta['kpt_shape'] = [heads[0]['kpt'][1][1] // 3, 3]
     meta_path = src.parent / f'{name}.json'
     meta_path.write_text(json.dumps(meta, indent=2))
     print('1/4 обрезанная модель:', cut_path)

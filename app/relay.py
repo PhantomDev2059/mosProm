@@ -22,7 +22,7 @@ from PIL import Image
 from tpu_pycloud_format import (MESSAGE_ID_ATTR_NAME, RESPONSE_ROUTING_KEYS_ATTR_NAME,
                                 TARGET_URI_ATTR_NAME, PyTask, deserialize, serialize)
 
-from yolo import gather_levels, letterbox, postprocess
+from yolo import gather_kpts, gather_levels, letterbox, merge, postprocess
 
 LOGIN = os.environ.get('LINQ_USER') or os.environ['USER']
 AMQP_HOST = os.environ.get('AMQP_HOST', '10.0.114.30')
@@ -70,52 +70,73 @@ class Relay:
                                         'models': list(self.models), 'pending': len(self.pending)})
             return
         try:
+            # model может быть списком через запятую (детектор + pose): каждая модель — отдельная задача на TPU,
+            # они выполняются параллельно, ответ собираем, когда пришли все
+            names = [m for m in str(headers.get('model') or next(iter(self.models))).split(',') if m]
+            metas = [self.models[m] for m in names]
             t0 = time.perf_counter()
-            meta = self.models[headers.get('model') or next(iter(self.models))]
             image = Image.open(io.BytesIO(body))
-            tensor, lb = letterbox(image, meta['imgsz'])
+            tensors = {}
+            for meta in metas:
+                if meta['imgsz'] not in tensors:
+                    tensors[meta['imgsz']] = letterbox(image, meta['imgsz'])
             t1 = time.perf_counter()
-            task_id = uuid.uuid4().hex
-            self.pending[task_id] = dict(reply_to=reply_to, corr=corr, meta=meta, lb=lb, size=image.size,
-                                         conf=float(headers.get('conf', 0.25)), iou=float(headers.get('iou', 0.45)),
-                                         t0=t0, pre_ms=(t1 - t0) * 1000, sent=time.perf_counter(), wall=time.time())
-            self.ch.basic_publish(EXCHANGE, TPU_QUEUE, serialize(PyTask({meta['input']: tensor})),
-                                  pika.BasicProperties(headers={
-                                      TARGET_URI_ATTR_NAME: meta['uri'],
-                                      RESPONSE_ROUTING_KEYS_ATTR_NAME: json.dumps([TPU_REPLY_QUEUE]),
-                                      MESSAGE_ID_ATTR_NAME: task_id}))
+            task = dict(reply_to=reply_to, corr=corr, size=image.size, metas=dict(zip(names, metas)), results={},
+                        conf=float(headers.get('conf', 0.25)), iou=float(headers.get('iou', 0.45)),
+                        t0=t0, pre_ms=(t1 - t0) * 1000, sent=time.perf_counter(), tensors=tensors)
+            for name, meta in zip(names, metas):
+                task_id = uuid.uuid4().hex
+                self.pending[task_id] = (task, name)
+                self.ch.basic_publish(EXCHANGE, TPU_QUEUE,
+                                      serialize(PyTask({meta['input']: tensors[meta['imgsz']][0]})),
+                                      pika.BasicProperties(headers={
+                                          TARGET_URI_ATTR_NAME: meta['uri'],
+                                          RESPONSE_ROUTING_KEYS_ATTR_NAME: json.dumps([TPU_REPLY_QUEUE]),
+                                          MESSAGE_ID_ATTR_NAME: task_id}))
         except Exception as e:
             traceback.print_exc()
             self.reply(reply_to, corr, {'error': f'{type(e).__name__}: {e}'})
 
     def on_tpu_reply(self, ch, method, props, body):
-        task = self.pending.pop((props.headers or {}).get(MESSAGE_ID_ATTR_NAME), None)
-        if task is None:
+        entry = self.pending.pop((props.headers or {}).get(MESSAGE_ID_ATTR_NAME), None)
+        if entry is None:
             return
-        tpu_ms = (time.perf_counter() - task['sent']) * 1000
+        task, name = entry
+        if task.get('failed'):
+            return
         try:
             data, _, worker = deserialize(body)
             if not data:
                 raise RuntimeError(f"TPU worker status={worker['status_code']}: {worker['error_message']}")
+            task['results'][name] = data
+            if len(task['results']) < len(task['metas']):
+                return
+            tpu_ms = (time.perf_counter() - task['sent']) * 1000
             t2 = time.perf_counter()
-            meta = task['meta']
-            dets = postprocess(gather_levels(meta, data), meta['strides'], task['lb'],
-                               task['size'], conf=task['conf'], iou=task['iou'])
+            dets = []
+            for model, meta in task['metas'].items():
+                lb = task['tensors'][meta['imgsz']][1]
+                dets.append(postprocess(gather_levels(meta, task['results'][model]), meta['strides'], lb, task['size'],
+                                        conf=task['conf'], iou=task['iou'],
+                                        kpts=gather_kpts(meta, task['results'][model])))
             t3 = time.perf_counter()
             self.reply(task['reply_to'], task['corr'], {
-                'detections': dets, 'size': task['size'],
+                'detections': merge(dets), 'size': task['size'],
                 'timing': {'pre_ms': round(task['pre_ms'], 1), 'tpu_ms': round(tpu_ms, 1),
                            'post_ms': round((t3 - t2) * 1000, 1),
                            'relay_ms': round((t3 - task['t0']) * 1000, 1)}})
         except Exception as e:
             traceback.print_exc()
+            task['failed'] = True
             self.reply(task['reply_to'], task['corr'], {'error': f'{type(e).__name__}: {e}'})
 
     def expire(self):
         now = time.perf_counter()
-        for task_id in [k for k, t in self.pending.items() if now - t['sent'] > TASK_TIMEOUT]:
-            task = self.pending.pop(task_id)
-            self.reply(task['reply_to'], task['corr'], {'error': f'TPU не ответил за {TASK_TIMEOUT:.0f} с'})
+        for task_id in [k for k, (t, _) in self.pending.items() if now - t['sent'] > TASK_TIMEOUT]:
+            task, _ = self.pending.pop(task_id)
+            if not task.get('failed'):
+                task['failed'] = True
+                self.reply(task['reply_to'], task['corr'], {'error': f'TPU не ответил за {TASK_TIMEOUT:.0f} с'})
 
     def run(self):
         while True:
