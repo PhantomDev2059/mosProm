@@ -29,7 +29,8 @@ from tpu_client import RelayClient  # noqa: E402
 from yolo import SKELETON, gather_kpts, gather_levels, letterbox, merge, postprocess  # noqa: E402
 
 load_env()
-MODEL = os.environ.get('LINQ_MODEL', 'yolov8n_640')
+# yolov8s: на TPU полнота 0.56 против 0.39 у yolov8n (coco128), скорость почти та же (13.3 против 14.5 FPS)
+MODEL = os.environ.get('LINQ_MODEL', 'yolov8s_640')
 POSE_MODEL = os.environ.get('LINQ_POSE_MODEL', 'yolov8n_pose_640')
 META = json.loads((ROOT / 'models' / f'{MODEL}.json').read_text())
 METAS = {m: json.loads((ROOT / 'models' / f'{m}.json').read_text())
