@@ -63,7 +63,9 @@ for clip in clips:
                         "box": box(tr.det.box if tr is not None and tr.cls == "person" else e.box)})
         items = [{"cls": d.cls, "box": box(d.box), "score": round(float(d.score), 2)}
                  for d in res.detections if d.cls in ITEMS]
-        people = [{"id": t.id, "box": box(t.det.box)} for t in res.tracks if t.cls == "person"]
+        people = [{"id": t.id, "box": box(t.det.box),
+                   "kp": [[round(float(v), 1) for v in k] for k in t.det.keypoints] if t.det.keypoints is not None else None}
+                  for t in res.tracks if t.cls == "person" and t.last_seen == state["now"]]
         frames.append({"f": idx, "t": round(state["now"], 2), "active": act, "items": items, "people": people})
     em.tick(state["now"] + 3600, lambda tid: 1e9)
     events = []

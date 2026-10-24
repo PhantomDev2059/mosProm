@@ -1344,12 +1344,12 @@
       if (t >= tClose) ch = ['I', 'IV', 'I', 'I'][Math.min(3, Math.floor((t - tClose) / BAR))];
       else if (t >= tSum) ch = ['IV', 'I', 'V', 'I'][Math.floor((t - tSum) / BAR) % 4];
       else ch = PROG[k % 4];
-      const open = t < 6;
+      const open = t < 5;
       pad(t, t1, CH[ch], open ? 0.2 : 0.24, { att: k === 0 ? 1.2 : 0.06, rel: 0.12, cut0: open ? 700 : 1000, cut1: open ? 1300 : 1500, hall: 0.2 });
       sub(t, t1, BASS[ch], open ? 0.25 : 0.38, { att: 0.02, rel: 0.08 });
     }
     // пульс: с первого шота нарушения до финала
-    const pulse0 = 6;
+    const pulse0 = 5;
     for (let b = 0; b * BEAT < DUR - 1e-9; b++) {
       const t = r3(b * BEAT);
       if (t < pulse0 - 2 * BEAT) {

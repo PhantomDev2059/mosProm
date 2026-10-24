@@ -269,6 +269,57 @@
     }
   };
 
+  // ---- скелет позы (17 точек COCO), как его видит модель: kp — 17×[x, y, уверенность] в экранных координатах
+  const LIMBS = [[5, 7], [7, 9], [6, 8], [8, 10], [5, 6], [5, 11], [6, 12], [11, 12], [11, 13], [13, 15], [12, 14], [14, 16]];
+  K.skeleton = (ctx, kp, o = {}) => {
+    const ok = (j) => kp[j] && kp[j][2] >= 0.3;
+    ctx.save();
+    ctx.globalAlpha *= o.alpha == null ? 1 : o.alpha;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // подложка — чтобы линия читалась на любом фоне кадра
+    for (const pass of [0, 1]) {
+      ctx.strokeStyle = pass ? o.color : 'rgba(5,7,15,0.55)';
+      ctx.lineWidth = pass ? o.width || 3 : (o.width || 3) + 3;
+      ctx.beginPath();
+      for (const [a, b] of LIMBS) {
+        if (!ok(a) || !ok(b)) continue;
+        ctx.moveTo(kp[a][0], kp[a][1]);
+        ctx.lineTo(kp[b][0], kp[b][1]);
+      }
+      ctx.stroke();
+    }
+    const r = o.joint || 4;
+    for (let j = 0; j < 17; j++) {
+      if (!ok(j) || (j > 0 && j < 5)) continue; // лицо — одной точкой носа
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(kp[j][0], kp[j][1], r, 0, L.TAU);
+      ctx.fill();
+      ctx.strokeStyle = o.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
+  // рамка предмета, как у детектора: тонкая рамка и плашка «класс 0.91»
+  K.modelBox = (ctx, bx, o) => {
+    const [x1, y1, x2, y2] = bx;
+    ctx.save();
+    ctx.globalAlpha *= o.alpha == null ? 1 : o.alpha;
+    ctx.strokeStyle = o.color;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const lbl = o.score != null ? `${o.label} ${o.score.toFixed(2)}` : o.label;
+    const w = K.measure(ctx, lbl, { kind: 'mono', size: 17, weight: 700 }) + 14;
+    const ly = y1 - 26 < (o.minY || 0) ? y2 + 2 : y1 - 26;
+    ctx.fillStyle = o.color;
+    ctx.fillRect(x1 - 1.5, ly, w, 24);
+    K.text(ctx, lbl, x1 + 6, ly + 17, { kind: 'mono', size: 17, weight: 700, color: o.textColor || '#0B1230' });
+    ctx.restore();
+  };
+
   // небольшой круг вокруг предмета (телефон, сигарета, голова без каски)
   K.itemRing = (ctx, bx, o) => {
     const [x1, y1, x2, y2] = bx;

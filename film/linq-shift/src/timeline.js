@@ -6,37 +6,55 @@ FILM.TIMELINE = {
  "width": 1920,
  "height": 1080,
  "safeBottom": 1080,
- "duration": 73.0,
+ "duration": 66.0,
  "shots": [
   {
    "id": "open",
    "file": "01-open.js",
    "start": 0,
-   "end": 6,
+   "end": 5,
    "mode": "schematic",
    "title": "Смена 24.10",
    "post": 0.3
   },
   {
-   "id": "v01-ppe",
+   "id": "v01-helmet",
    "file": "10-violations.js",
    "mode": "illustrated",
-   "title": "Нет каски и жилета",
+   "title": "Нет каски",
    "transitionIn": {
     "kind": "fade",
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Нет каски и жилета: ppe 1.20+6.0",
-   "start": 6.0,
-   "end": 12.0,
+   "brief": "Нет каски: ppe 2.20+5.0",
+   "start": 5.0,
+   "end": 10.0,
    "post": 0.3
   },
   {
-   "id": "v02-phone",
+   "id": "v02-vest",
+   "file": "10-violations.js",
+   "mode": "illustrated",
+   "title": "Нет сигнального жилета",
+   "transitionIn": {
+    "kind": "fade",
+    "dur": 0.25
+   },
+   "video": {
+    "n": 133,
+    "fps": 25
+   },
+   "brief": "Нет сигнального жилета: ppe 1.60+5.0",
+   "start": 10.0,
+   "end": 15.0,
+   "post": 0.3
+  },
+  {
+   "id": "v03-phone",
    "file": "10-violations.js",
    "mode": "illustrated",
    "title": "Телефон в рабочей зоне",
@@ -45,16 +63,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Телефон в рабочей зоне: phone 1.20+6.0",
-   "start": 12.0,
-   "end": 18.0,
+   "brief": "Телефон в рабочей зоне: phone 1.60+5.0",
+   "start": 15.0,
+   "end": 20.0,
    "post": 0.3
   },
   {
-   "id": "v03-proximity",
+   "id": "v04-proximity",
    "file": "10-violations.js",
    "mode": "illustrated",
    "title": "Пешеход у погрузчика",
@@ -63,16 +81,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Пешеход у погрузчика: proximity 1.00+6.0",
-   "start": 18.0,
-   "end": 24.0,
+   "brief": "Пешеход у погрузчика: proximity 1.40+5.0",
+   "start": 20.0,
+   "end": 25.0,
    "post": 0.3
   },
   {
-   "id": "v04-smoking",
+   "id": "v05-smoking",
    "file": "10-violations.js",
    "mode": "illustrated",
    "title": "Курение на территории",
@@ -81,16 +99,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Курение на территории: smoking 7.40+6.0",
-   "start": 24.0,
+   "brief": "Курение на территории: smoking 7.80+5.0",
+   "start": 25.0,
    "end": 30.0,
    "post": 0.3
   },
   {
-   "id": "v05-fall",
+   "id": "v06-fall",
    "file": "10-violations.js",
    "mode": "schematic",
    "title": "Падение человека",
@@ -99,16 +117,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Падение человека: fall 0.20+6.0",
+   "brief": "Падение человека: fall 0.60+5.0",
    "start": 30.0,
-   "end": 36.0,
+   "end": 35.0,
    "post": 0.3
   },
   {
-   "id": "v06-immobile",
+   "id": "v07-immobile",
    "file": "10-violations.js",
    "mode": "schematic",
    "title": "Лежит без движения",
@@ -117,16 +135,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Лежит без движения: fall 10.60+6.0",
-   "start": 36.0,
-   "end": 42.0,
+   "brief": "Лежит без движения: fall 11.00+5.0",
+   "start": 35.0,
+   "end": 40.0,
    "post": 0.3
   },
   {
-   "id": "v07-running",
+   "id": "v08-running",
    "file": "10-violations.js",
    "mode": "illustrated",
    "title": "Бег по цеху",
@@ -135,16 +153,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 140,
+    "n": 130,
     "fps": 25
    },
-   "brief": "Бег по цеху: running 0.40+6.0",
-   "start": 42.0,
-   "end": 48.0,
+   "brief": "Бег по цеху: running 0.80+5.0",
+   "start": 40.0,
+   "end": 45.0,
    "post": 0.3
   },
   {
-   "id": "v08-fire",
+   "id": "v09-fire",
    "file": "10-violations.js",
    "mode": "schematic",
    "title": "Открытый огонь",
@@ -153,16 +171,16 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 158,
+    "n": 133,
     "fps": 25
    },
-   "brief": "Открытый огонь: fire 0.80+6.0",
-   "start": 48.0,
-   "end": 54.0,
+   "brief": "Открытый огонь: fire 0.96+5.0",
+   "start": 45.0,
+   "end": 50.0,
    "post": 0.3
   },
   {
-   "id": "v09-smoke",
+   "id": "v10-smoke",
    "file": "10-violations.js",
    "mode": "illustrated",
    "title": "Задымление",
@@ -171,19 +189,19 @@ FILM.TIMELINE = {
     "dur": 0.25
    },
    "video": {
-    "n": 55,
+    "n": 45,
     "fps": 25
    },
-   "brief": "Задымление: smoke 6.80+6.0",
-   "start": 54.0,
-   "end": 60.0,
+   "brief": "Задымление: smoke 7.20+5.0",
+   "start": 50.0,
+   "end": 55.0,
    "post": 0.3
   },
   {
    "id": "summary",
    "file": "90-summary.js",
-   "start": 60.0,
-   "end": 68.0,
+   "start": 55.0,
+   "end": 62.0,
    "mode": "illustrated",
    "title": "Итог смены",
    "transitionIn": {
@@ -195,8 +213,8 @@ FILM.TIMELINE = {
   {
    "id": "close",
    "file": "99-close.js",
-   "start": 68.0,
-   "end": 73.0,
+   "start": 62.0,
+   "end": 66.0,
    "mode": "schematic",
    "title": "Финал",
    "transitionIn": {
@@ -212,50 +230,63 @@ FILM.TIMELINE = {
    "kind": "open"
   },
   {
-   "t": 6.0,
+   "t": 5.0,
    "kind": "cut"
   },
   {
-   "t": 8.0,
+   "t": 6.6,
    "kind": "alarm",
    "sev": "high"
   },
   {
-   "t": 10.7,
+   "t": 8.7,
    "kind": "resolve"
   },
   {
-   "t": 12.0,
+   "t": 10.0,
    "kind": "cut"
   },
   {
-   "t": 14.0,
+   "t": 11.6,
    "kind": "alarm",
    "sev": "medium"
   },
   {
-   "t": 16.7,
+   "t": 13.7,
    "kind": "resolve"
   },
   {
-   "t": 18.0,
+   "t": 15.0,
    "kind": "cut"
   },
   {
+   "t": 16.6,
+   "kind": "alarm",
+   "sev": "medium"
+  },
+  {
+   "t": 18.7,
+   "kind": "resolve"
+  },
+  {
    "t": 20.0,
+   "kind": "cut"
+  },
+  {
+   "t": 21.6,
    "kind": "alarm",
    "sev": "critical"
   },
   {
-   "t": 22.7,
+   "t": 23.7,
    "kind": "resolve"
   },
   {
-   "t": 24.0,
+   "t": 25.0,
    "kind": "cut"
   },
   {
-   "t": 26.0,
+   "t": 26.6,
    "kind": "alarm",
    "sev": "high"
   },
@@ -268,72 +299,72 @@ FILM.TIMELINE = {
    "kind": "cut"
   },
   {
-   "t": 32.0,
+   "t": 31.6,
    "kind": "alarm",
    "sev": "critical"
   },
   {
-   "t": 34.7,
+   "t": 33.7,
    "kind": "resolve"
   },
   {
-   "t": 36.0,
+   "t": 35.0,
    "kind": "cut"
   },
   {
-   "t": 38.0,
+   "t": 36.6,
    "kind": "alarm",
    "sev": "critical"
   },
   {
-   "t": 40.7,
+   "t": 38.7,
    "kind": "resolve"
   },
   {
-   "t": 42.0,
+   "t": 40.0,
    "kind": "cut"
   },
   {
-   "t": 44.0,
+   "t": 41.6,
    "kind": "alarm",
    "sev": "medium"
   },
   {
-   "t": 46.7,
+   "t": 43.7,
    "kind": "resolve"
   },
   {
-   "t": 48.0,
+   "t": 45.0,
    "kind": "cut"
   },
   {
-   "t": 50.0,
+   "t": 46.6,
    "kind": "alarm",
    "sev": "critical"
   },
   {
-   "t": 52.7,
+   "t": 48.7,
    "kind": "resolve"
   },
   {
-   "t": 54.0,
+   "t": 50.0,
    "kind": "cut"
   },
   {
-   "t": 56.0,
+   "t": 51.6,
    "kind": "alarm",
    "sev": "high"
   },
   {
-   "t": 58.7,
+   "t": 53.7,
    "kind": "resolve"
   },
   {
-   "t": 60.0,
+   "t": 55.0,
    "kind": "summary"
   },
   {
-   "t": 68.0,
+   "t": 62.0,
    "kind": "close"
   }
  ]

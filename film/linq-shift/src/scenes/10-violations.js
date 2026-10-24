@@ -25,6 +25,31 @@
     return [MON.x + v[0] * SX, MON.y + v[1] * SY, MON.x + v[2] * SX, MON.y + v[3] * SY];
   }
 
+  // скелет человека в момент t: 17 точек между кадрами анализа (5 к/с), в экранных координатах
+  function kpAt(rows, t) {
+    if (!rows || !rows.length || t < rows[0][0] - 0.12 || t > rows[rows.length - 1][0] + 0.25) return null;
+    let i = 0;
+    while (i < rows.length - 1 && rows[i + 1][0] <= t) i++;
+    const a = rows[i], b = rows[Math.min(rows.length - 1, i + 1)];
+    if (b[0] - a[0] > 0.6 && t > a[0] + 0.25) return null;
+    const u = b[0] > a[0] ? L.clamp((t - a[0]) / (b[0] - a[0])) : 0;
+    const kp = [];
+    for (let j = 0; j < 17; j++) {
+      const o = 5 + 3 * j;
+      const ca = a[o + 2], cb = b[o + 2];
+      const ok = ca >= 0.3 && cb >= 0.3;
+      const x = ok ? a[o] + (b[o] - a[o]) * u : u < 0.5 ? a[o] : b[o];
+      const y = ok ? a[o + 1] + (b[o + 1] - a[o + 1]) * u : u < 0.5 ? a[o + 1] : b[o + 1];
+      const c = ok ? Math.min(ca, cb) : u < 0.5 ? ca : cb;
+      kp.push([MON.x + x * SX, MON.y + y * SY, c]);
+    }
+    return kp;
+  }
+  const ITEM = {
+    helmet: ['каска', '#3FAE7A'], head: ['голова', '#E5484D'], no_helmet: ['без каски', '#E5484D'],
+    vest: ['жилет', '#3FAE7A'], phone: ['телефон', '#F2C230'], cigarette: ['сигарета', '#F2C230'],
+  };
+
   // цифра по калибровке пола в момент t (расстояние до техники или скорость), ближайшая по времени
   function metricAt(ev, t) {
     const vs = ev.metric && ev.metric.values;
@@ -68,6 +93,13 @@
         ctx.beginPath();
         ctx.rect(MON.x, MON.y, MON.w, MON.h);
         ctx.clip();
+        // скелеты всех людей — как их видит модель позы; нарушитель после первого сигнала — цветом тревоги
+        (ev.people || []).forEach((pp) => {
+          const kp = kpAt(pp.s, t);
+          if (!kp) return;
+          const hot = pp.violator && t >= ev.tStart;
+          K.skeleton(ctx, kp, { color: hot ? sev.color : K.C.cyan, width: hot ? 4 : 2.6, alpha: hot ? 1 : 0.8 * L.seg(t, 0.1, 0.5), joint: hot ? 4.5 : 3 });
+        });
         // погрузчик и дистанция до пешехода
         const vb = ev.vehicle ? boxAt(ev.vehicle.boxes, t) : null;
         const pb = ev.vehicle && ev.tracks[0] ? boxAt(ev.tracks[0].boxes, t) : null;
@@ -133,10 +165,13 @@
             K.text(ctx, lbl, cx, cy + 6, { kind: 'mono', size: 26, weight: 700, color: '#FFFFFF', align: 'center' });
           }
         }
-        (ev.items || []).forEach((it, k) => {
+        // предметы у нарушителя — рамкой детектора: класс и уверенность модели
+        (ev.items || []).forEach((it) => {
           const b = boxAt(it.boxes, t);
-          if (!b || !alarm) return;
-          K.itemRing(ctx, b, { color: K.C.yellow, seed: K.sd(ID, 'i', k), p: L.seg(t, ev.tOpen, ev.tOpen + 0.35) });
+          if (!b || t < ev.tStart) return;
+          const [label, color] = ITEM[it.cls] || [it.cls, K.C.yellow];
+          const near = it.boxes.reduce((m, x) => (Math.abs(x[0] - t) < Math.abs(m[0] - t) ? x : m), it.boxes[0]);
+          K.modelBox(ctx, b, { label, color, score: near[5], alpha: L.seg(t, ev.tStart, ev.tStart + 0.25), minY: MON.y + 50 });
         });
         ctx.restore();
         // ролик камеры кончился раньше шота — стоит кадр тревоги

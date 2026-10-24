@@ -34,36 +34,39 @@ FPS = 25
 # что показываем: момент тревоги — настоящее событие конвейера (detect.py, с калибровкой пола из cams.json);
 # speed — замедление показа, vehicle — рамка погрузчика, maxh — не рисовать рамку крупнее (человек у камеры)
 PICKS = [
-    dict(shot="v01-ppe", clip="ppe", sev="high", tracks=[1, 2, 4], types=["no_vest", "no_helmet"], inset=0.06, label="НЕТ КАСКИ И ЖИЛЕТА",
-         title="Нет каски и жилета", sub="Трое посетителей прошли в цех без СИЗ", cam="К-03 · ЦЕХ №2",
-         place="Цех №2 · центральный проход", min=37, sec=14, ack=1, res=4, short="СИЗ", type="no_helmet"),
-    dict(shot="v02-phone", clip="phone", sev="medium", tracks=[1], items=["phone"], label="ТЕЛЕФОН",
+    dict(shot="v01-helmet", clip="ppe", sev="high", tracks=[1, 2, 3], types=["no_helmet"], inset=0.06, label="НЕТ КАСКИ",
+         title="Нет каски", sub="Трое посетителей прошли в цех без касок", cam="К-03 · ЦЕХ №2", show=["head", "no_helmet"],
+         place="Цех №2 · центральный проход", min=37, sec=14, ack=1, res=4, short="Каска", type="no_helmet"),
+    dict(shot="v02-vest", clip="ppe", sev="medium", tracks=[4], types=["no_vest"], crop=[0, 20, 640, 360], label="НЕТ ЖИЛЕТА",
+         title="Нет сигнального жилета", sub="Рабочий в каске, но без жилета", cam="К-03 · ЦЕХ №2", show=["helmet"],
+         place="Цех №2 · у стеллажей", min=71, sec=50, ack=2, res=5, short="Жилет", type="no_vest"),
+    dict(shot="v03-phone", clip="phone", sev="medium", tracks=[1], show=["phone"], label="ТЕЛЕФОН",
          title="Телефон в рабочей зоне", sub="Разговор по телефону в проходе склада", cam="К-07 · СКЛАД ГОТ. ПРОДУКЦИИ",
          place="Склад готовой продукции", min=96, sec=41, ack=2, res=6, short="Телефон", type="phone"),
-    dict(shot="v03-proximity", clip="proximity", sev="critical", vehicle=True, label="ПЕШЕХОД",
+    dict(shot="v04-proximity", clip="proximity", sev="critical", vehicle=True, label="ПЕШЕХОД",
          title="Пешеход у погрузчика", sub="Человек в зоне движения погрузчика ближе 3 м", cam="К-02 · СКЛАД, ПРОЕЗД",
          place="Склад · проезд погрузчиков", min=141, sec=27, ack=1, res=3, short="Погрузчик", type="vehicle_proximity"),
-    dict(shot="v04-smoking", clip="smoking", sev="high", tracks=[1], items=["cigarette"], label="КУРЕНИЕ",
+    dict(shot="v05-smoking", clip="smoking", sev="high", tracks=[1], show=["cigarette"], label="КУРЕНИЕ",
          title="Курение на территории", sub="Сигарета вне места для курения", cam="К-05 · ТЕРРИТОРИЯ",
          place="Территория у склада", min=188, sec=5, ack=2, res=5, short="Курение", type="smoking"),
-    dict(shot="v05-fall", clip="fall", sev="critical", tracks=[1], label="ПАДЕНИЕ", title="Падение человека",
+    dict(shot="v06-fall", clip="fall", sev="critical", tracks=[1], label="ПАДЕНИЕ", title="Падение человека",
          sub="Сотрудник упал в коридоре АБК", cam="К-04 · АБК, КОРИДОР", place="АБК · коридор 2 этажа",
          min=243, sec=22, ack=1, res=3, plate="navy", short="Падение", type="fall"),
-    dict(shot="v06-immobile", clip="fall", sev="critical", tracks=[1], label="ЛЕЖИТ БЕЗ ДВИЖЕНИЯ",
+    dict(shot="v07-immobile", clip="fall", sev="critical", tracks=[1], label="ЛЕЖИТ БЕЗ ДВИЖЕНИЯ",
          title="Лежит без движения", sub="Не встаёт больше 10 секунд — нужна помощь", cam="К-04 · АБК, КОРИДОР",
          place="АБК · коридор 2 этажа", min=243, sec=33, ack=1, res=3, plate="navy", short="Без движения", type="immobile"),
-    dict(shot="v07-running", clip="running", sev="medium", maxh=560, label="БЕГ",
+    dict(shot="v08-running", clip="running", sev="medium", maxh=560, label="БЕГ",
          title="Бег по цеху", sub="Бегом через склад — риск столкновения и падения", cam="К-07 · СКЛАД ГОТ. ПРОДУКЦИИ",
          place="Склад готовой продукции · ворота", min=318, sec=50, ack=2, res=5, short="Бег", type="running"),
-    dict(shot="v08-fire", clip="fire", sev="critical", zone="fire", speed=0.4, label="ОТКРЫТЫЙ ОГОНЬ",
+    dict(shot="v09-fire", clip="fire", sev="critical", zone="fire", speed=0.4, label="ОТКРЫТЫЙ ОГОНЬ",
          title="Открытый огонь", sub="Возгорание у ёмкости — потушено огнетушителем", cam="К-06 · ПРОМПЛОЩАДКА",
          place="Промплощадка · участок огневых работ", min=391, sec=9, ack=1, res=2, plate="navy", short="Огонь", type="open_fire"),
-    dict(shot="v09-smoke", clip="smoke", sev="high", zone="smoke", label="ЗАДЫМЛЕНИЕ", title="Задымление",
+    dict(shot="v10-smoke", clip="smoke", sev="high", zone="smoke", label="ЗАДЫМЛЕНИЕ", title="Задымление",
          sub="Дым над участком разливки — проверить вытяжку", cam="К-01 · ЦЕХ №1", place="Цех №1 · участок разливки",
          min=497, sec=48, ack=2, res=7, short="Дым", type="smoke"),
 ]
-T_OPEN = 2.0   # тревога на 2-й секунде шота
-CONFIRM = 1.0  # рамка — за секунду до тревоги, кольцо подтверждения
+T_OPEN = 1.6   # тревога на 1,6 с шота (шот — 5 с: десять тревог и два ролика укладываются в 2 минуты)
+CONFIRM = 0.8  # рамка — за 0,8 с до тревоги, кольцо подтверждения
 
 
 def smooth(samples, a=0.5):
@@ -77,7 +80,7 @@ def smooth(samples, a=0.5):
             j = i - 1 if rng.step == 1 else i + 1
             for k in range(1, 5):
                 out[i][k] = a * out[i][k] + (1 - a) * out[j][k]
-    return [[x[0]] + [round(v, 1) for v in x[1:]] for x in out]
+    return [[x[0]] + [round(v, 1) for v in x[1:5]] + [round(v, 2) for v in x[5:]] for x in out]
 
 
 def samples_people(d, tracks, t0, t1, maxh=None):
@@ -115,8 +118,22 @@ def samples_items(d, classes, person, t0, t1):
         cand = [i for i in f["items"] if i["cls"] in classes
                 and x1 - pad <= (i["box"][0] + i["box"][2]) / 2 <= x2 + pad and y1 - pad <= (i["box"][1] + i["box"][3]) / 2 <= y2]
         if cand:
-            res.append([f["t"], *max(cand, key=lambda i: i["score"])["box"]])
+            best = max(cand, key=lambda i: i["score"])
+            res.append([f["t"], *best["box"], best["score"]])
     return res
+
+
+def samples_kp(d, t0, t1, maxh=None):
+    """Скелеты всех людей в окне: {трек: [[t, x1, y1, x2, y2, 17×(x, y, уверенность)], ...]}."""
+    out = {}
+    for f in d["frames"]:
+        if not (t0 <= f["t"] <= t1):
+            continue
+        for p in f["people"]:
+            if not p.get("kp") or (maxh and p["box"][3] - p["box"][1] > maxh) or p["box"][3] - p["box"][1] < 60:
+                continue
+            out.setdefault(p["id"], []).append([f["t"], *p["box"], *[v for k in p["kp"] for v in k]])
+    return out
 
 
 def frame_img(clip, t):
@@ -175,13 +192,20 @@ for n, pk in enumerate(PICKS):
     loc = lambda tc: round((tc - win0) / sp_, 2)  # noqa: E731
     t_open = loc(opened)
     t_start = max(0.05, t_open - CONFIRM)
-    dur = max(6.0, math.ceil((t_open + 3.7) * 2) / 2)
+    dur = max(5.0, math.ceil((t_open + 3.3) * 2) / 2)
     hold = loc(clip_dur) if win0 + dur * sp_ > clip_dur else None
-    t_ack, t_res = t_open + 1.5, t_open + 2.7
+    t_ack, t_res = t_open + 1.1, t_open + 2.1
     c0 = win0 + t_start * sp_ - 0.21      # первый кадр анализа для рамки
     c1 = win0 + dur * sp_ + 0.3
 
+    crop = pk.get("crop")                      # [x, y, w, h] в кадре 1280×720 → весь монитор
+    kx, ky = (1280 / crop[2], 720 / crop[3]) if crop else (1.0, 1.0)
+
+    def cxy(v, i):                             # i — индекс в записи: x на нечётных-1, y на чётных-1
+        return round(((v - crop[0]) * kx) if i % 2 == 0 else ((v - crop[1]) * ky), 1) if crop else v
+
     def conv(ss, maxh=None):
+        ss = [[x[0], *[cxy(v, i) for i, v in enumerate(x[1:5])], *x[5:]] for x in ss]
         out = smooth([[loc(x[0]), *x[1:]] for x in ss])
         if hold is not None and out:
             t = out[-1][0]
@@ -203,10 +227,23 @@ for n, pk in enumerate(PICKS):
                         w = b[3] - b[1]
                         b[1], b[3] = round(b[1] + w * pk["inset"], 1), round(b[3] - w * pk["inset"], 1)
                 tracks.append({"label": pk["label"], "boxes": bx})
-                if pk.get("items"):
-                    its = samples_items(d, set(pk["items"]), ps[k], c0, c1)
+                for cls in pk.get("show", []):
+                    its = samples_items(d, {cls}, ps[k], c0, c1)
                     if its:
-                        items.append({"boxes": conv(its)})
+                        items.append({"cls": cls, "boxes": conv(its)})
+    # скелеты всех людей в кадре — «как видит модель»
+    people = []
+    for tid, ss in samples_kp(d, c0 - 1.0, c1, pk.get("maxh")).items():
+        if len(ss) < 3:
+            continue
+        rows = []
+        for x in ss:
+            kp = []
+            for j in range(17):
+                kx_, ky_, kc = x[5 + 3 * j], x[6 + 3 * j], x[7 + 3 * j]
+                kp += [cxy(kx_, 0), cxy(ky_, 1), round(kc, 2)]
+            rows.append([loc(x[0]), *[cxy(v, i) for i, v in enumerate(x[1:5])], *kp])
+        people.append({"id": tid, "violator": tid in (pk.get("tracks") or []), "s": rows})
     vehicle = None
     raw_v = None
     if pk.get("vehicle"):
@@ -223,12 +260,15 @@ for n, pk in enumerate(PICKS):
         for f in fdir.glob("*.jpg"):
             f.unlink()
     fdir.mkdir(parents=True, exist_ok=True)
-    vf = (f"setpts={1 / sp_:.4f}*PTS," if sp_ != 1.0 else "") + "fps=25,scale=1280:720"
+    vf = (f"setpts={1 / sp_:.4f}*PTS," if sp_ != 1.0 else "") + (f"crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}," if crop else "") \
+        + "fps=25,scale=1280:720:flags=lanczos"
     subprocess.run([FFMPEG, "-nostdin", "-v", "error", "-y", "-ss", f"{win0:.3f}", "-t", f"{(dur + 0.3) * sp_:.3f}",
                     "-i", str(CLIPS / f"{pk['clip']}.mp4"), "-vf", vf, "-q:v", "3", str(fdir / "f%05d.jpg")], check=True)
     nfr = len(list(fdir.glob("*.jpg")))
     # карточки бота: кадр тревоги с рамками нарушителей
     snap = frame_img(pk["clip"], opened)
+    if crop:
+        snap = snap.crop((crop[0], crop[1], crop[0] + crop[2], crop[1] + crop[3])).resize((1280, 720), Image.LANCZOS)
     dr = ImageDraw.Draw(snap)
     for tr in tracks + ([vehicle] if vehicle else []):
         if tr["boxes"]:
@@ -255,7 +295,7 @@ for n, pk in enumerate(PICKS):
         "cam": pk["cam"], "place": pk["place"], "min": pk["min"], "sec": pk["sec"], "ackMin": pk["ack"], "resMin": pk["res"],
         "plate": pk.get("plate", "paper"), "short2": pk["short"],
         "tStart": round(t_start, 2), "tOpen": round(t_open, 2), "tAck": round(t_ack, 2), "tRes": round(t_res, 2),
-        "confirm": CONFIRM, "hold": hold, "tracks": tracks, "items": items, "vehicle": vehicle, "metric": metric,
+        "confirm": CONFIRM, "hold": hold, "tracks": tracks, "items": items, "vehicle": vehicle, "metric": metric, "people": people,
         "card": pk["shot"] + "_open", "cardRes": pk["shot"] + "_res",
     })
     shots.append({"id": pk["shot"], "file": "10-violations.js", "dur": dur, "mode": "schematic" if pk.get("plate") == "navy" else "illustrated",
@@ -281,8 +321,8 @@ shift = {"fontsDir": str(repo / "assets" / "fonts"), "framesDir": str(FRAMES), "
 
 # таймлайн: открытие, нарушения, итог, финал
 t = 0.0
-tl_shots = [{"id": "open", "file": "01-open.js", "start": 0, "end": 6, "mode": "schematic", "title": "Смена 24.10"}]
-t = 6.0
+tl_shots = [{"id": "open", "file": "01-open.js", "start": 0, "end": 5, "mode": "schematic", "title": "Смена 24.10"}]
+t = 5.0
 cues = [{"t": 0, "kind": "open"}]
 for s in shots:
     s["start"], s["end"] = t, t + s.pop("dur")
@@ -292,12 +332,12 @@ for s in shots:
     cues.append({"t": round(s["start"] + ev["tRes"], 3), "kind": "resolve"})
     tl_shots.append(s)
     t = s["end"]
-tl_shots.append({"id": "summary", "file": "90-summary.js", "start": t, "end": t + 8, "mode": "illustrated", "title": "Итог смены", "transitionIn": {"kind": "fade", "dur": 0.4}})
+tl_shots.append({"id": "summary", "file": "90-summary.js", "start": t, "end": t + 7, "mode": "illustrated", "title": "Итог смены", "transitionIn": {"kind": "fade", "dur": 0.4}})
 cues.append({"t": t, "kind": "summary"})
-t += 8
-tl_shots.append({"id": "close", "file": "99-close.js", "start": t, "end": t + 5, "mode": "schematic", "title": "Финал", "transitionIn": {"kind": "fade", "dur": 0.4}})
+t += 7
+tl_shots.append({"id": "close", "file": "99-close.js", "start": t, "end": t + 4, "mode": "schematic", "title": "Финал", "transitionIn": {"kind": "fade", "dur": 0.4}})
 cues.append({"t": t, "kind": "close"})
-t += 5
+t += 4
 for sh in tl_shots:
     sh["post"] = 0.3   # зерно плиты слабее: иначе кодек тонет в шуме
 tl = {"title": "LinQ Guard — смена", "bpm": 120, "fps": 24, "width": 1920, "height": 1080, "safeBottom": 1080,
