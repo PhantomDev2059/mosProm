@@ -1,0 +1,10 @@
+camera: cam-08-cctv
+title: Цех металлообработки — штатная камера наблюдения
+source: cam_cctv.mp4
+analysis_fps: 5
+models: [pose, ppe, forklift]
+rules:
+  - {type: vehicle_proximity, min_gap_heights: 0.4}
+  - {type: no_vest, min_person_px: 120}
+  - {type: running}
+  - {type: fall}
