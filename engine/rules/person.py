@@ -3,7 +3,7 @@ import numpy as np
 
 from ..geometry import ioa
 from ..scene import Scene
-from ..types import L_ANKLE, L_WRIST, NOSE, PERSON, R_ANKLE, R_WRIST, Detection, Track
+from ..types import L_ANKLE, L_SHOULDER, L_WRIST, NOSE, PERSON, R_ANKLE, R_SHOULDER, R_WRIST, Detection, Track
 from .base import RuleContext, Signal, register
 
 # «machinery» открытой модели СИЗ срабатывает на леса, щиты подстанции и стеллажи — в технику не берём
@@ -143,6 +143,14 @@ class Running:
         return None
 
 
+def body_size(det: Detection) -> float:
+    """Рост человека в пикселях. На крупном плане рамка обрезана краем кадра и рост занижен в разы —
+    тогда оцениваем по ширине плеч (у взрослого она около четверти роста)."""
+    ls, rs = det.keypoint(L_SHOULDER), det.keypoint(R_SHOULDER)
+    shoulders = float(np.hypot(*(ls[:2] - rs[:2]))) if ls is not None and rs is not None else 0.0
+    return max(det.height, 4.0 * shoulders)
+
+
 def _near_hands_or_face(det: Detection, item: Detection, radius: float) -> bool:
     cx, cy = item.center
     for idx in (L_WRIST, R_WRIST, NOSE):
@@ -162,7 +170,7 @@ class Phone:
         if not ctx.zone.contains(det.foot):
             return None
         for item in items_near(ctx, ("phone",), det.box, 0.6):
-            if det.keypoints is None or _near_hands_or_face(det, item, self.radius_heights * det.height):
+            if det.keypoints is None or _near_hands_or_face(det, item, self.radius_heights * body_size(det)):
                 return Signal(item.score)
         return None
 
@@ -177,7 +185,7 @@ class Smoking:
         if not ctx.zone.contains(det.foot):
             return None
         for item in items_near(ctx, ("cigarette",), det.box, 0.6):
-            if det.keypoints is None or _near_hands_or_face(det, item, self.radius_heights * det.height):
+            if det.keypoints is None or _near_hands_or_face(det, item, self.radius_heights * body_size(det)):
                 return Signal(item.score)
         return None
 

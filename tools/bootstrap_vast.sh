@@ -32,7 +32,7 @@ PY
   python - <<'PY'
 import json
 p = "/workspace/linq/models/registry.json"; r = json.load(open(p))
-conf = {"pose": 0.4, "coco": 0.4, "ppe": 0.45, "forklift": 0.6, "fire": 0.4, "cigarette": 0.35}
+conf = {"pose": 0.4, "coco": 0.4, "ppe": 0.45, "forklift": 0.6, "fire": 0.3, "cigarette": 0.35}
 for k, v in r.items(): v["conf"] = conf.get(k, 0.4)
 json.dump(r, open(p, "w"), ensure_ascii=False, indent=1)
 PY
