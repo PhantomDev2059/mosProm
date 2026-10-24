@@ -143,3 +143,4 @@ def test_proximity_needs_visible_feet_and_sane_vehicle_box():
     huge = Track(4, "forklift", Detection(np.array([0, 0, 1000, 545], np.float32), 0.9, "forklift"), 0, 0)
     assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, huge], (720, 1280))) is None
     assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, near], (720, 1280))) is not None
+    assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, near], (540, 960))) is None   # рамка у нижнего края

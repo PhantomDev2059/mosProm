@@ -94,6 +94,8 @@ class VehicleProximity:
         # на переднем плане «касается» погрузчика, который стоит в глубине склада
         if person.keypoints is not None and person.keypoint(L_ANKLE) is None and person.keypoint(R_ANKLE) is None:
             return None
+        if ctx.frame_shape and person.box[3] >= 0.98 * ctx.frame_shape[0]:   # ноги за краем кадра, щиколотки «додуманы»
+            return None
         frame_area = ctx.frame_shape[0] * ctx.frame_shape[1] if ctx.frame_shape else None
         for v in ctx.tracks:
             if v.cls not in VEHICLES or v.last_seen != ctx.now:
