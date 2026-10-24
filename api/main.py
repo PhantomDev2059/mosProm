@@ -6,6 +6,7 @@ import asyncio
 import csv
 import io
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -593,32 +594,78 @@ def _live_user(request: Request) -> dict:
     return user
 
 
+LIVE_MAX_MB = int(os.environ.get("LINQ_LIVE_MAX_MB", "150"))
+# готовые записи для «потыкать» без загрузки: файлы в DATA/samples, считаются на TPU так же, как загруженные
+SAMPLES = {"lk_fire": "Пример: огонь", "lk_fall": "Пример: падение", "lk_helmet": "Пример: без каски"}
+
+
+def _live_free() -> None:
+    """Одновременно на TPU считается одна загруженная запись: на стенде 1,5 ядра CPU на всех."""
+    if LIVE_RUNNING:
+        raise HTTPException(429, "Сейчас анализируется другая запись — попробуйте через минуту")
+
+
+def _start_live(path: Path, title: str) -> dict:
+    cid = path.stem
+    cfg = parse_camera({"camera": cid, "title": title, "source": str(path), "analysis_fps": 5, "loop": False,
+                        "models": ["pose", "ppe2", "ppe", "forklift", "fire", "cigarette", "coco"],
+                        "rules": [{"type": t} for t in LIVE_RULES]})
+    LIVE_RUNNING.add(cid)                     # сразу, до старта потока: второй запрос в ту же секунду уже получит 429
+    start_camera(cfg)
+    live[cid] = {"camera_id": cid, "title": title, "started": time.time()}
+    return {"camera_id": cid, "title": title}
+
+
 @app.post("/api/tg/live/upload")
 async def live_upload(request: Request, name: str):
     """Запись с камеры — сырым потоком (?name=файл.mp4): воспроизводится в реальном времени как живая камера,
     тревоги уходят в бот так же, как с настоящих камер."""
     _live_user(request)
+    _live_free()
+    if int(request.headers.get("content-length") or 0) > LIVE_MAX_MB << 20:
+        raise HTTPException(413, f"Запись больше {LIVE_MAX_MB} МБ — обрежьте до пары минут")
     safe = "".join(c for c in Path(name).stem if c.isalnum() or c in "-_ ").strip()[:40] or "запись"
     n = len(live) + 1
     cid = f"live-{int(time.time())}"
     path = DATA / "uploads" / f"{cid}.mp4"
     path.parent.mkdir(parents=True, exist_ok=True)
+    size = 0
     with path.open("wb") as f:
         async for chunk in request.stream():
+            size += len(chunk)
+            if size > LIVE_MAX_MB << 20:
+                break
             f.write(chunk)
+    if size > LIVE_MAX_MB << 20:
+        path.unlink(missing_ok=True)
+        raise HTTPException(413, f"Запись больше {LIVE_MAX_MB} МБ — обрежьте до пары минут")
     cap = cv2.VideoCapture(str(path))
     ok = cap.isOpened() and cap.read()[0]
     cap.release()
     if not ok:
         path.unlink(missing_ok=True)
         raise HTTPException(400, "не похоже на видеофайл")
-    title = f"Лайв {n}: {safe}"
-    cfg = parse_camera({"camera": cid, "title": title, "source": str(path), "analysis_fps": 5, "loop": False,
-                        "models": ["pose", "ppe2", "ppe", "forklift", "fire", "cigarette", "coco"],
-                        "rules": [{"type": t} for t in LIVE_RULES]})
-    start_camera(cfg)
-    live[cid] = {"camera_id": cid, "title": title, "started": time.time()}
-    return {"camera_id": cid, "title": title}
+    _live_free()                              # пока файл шёл, могли запустить другую запись
+    return _start_live(path, f"Лайв {n}: {safe}")
+
+
+@app.get("/api/tg/live/samples")
+def live_samples():
+    return [{"name": k, "title": v} for k, v in SAMPLES.items() if (DATA / "samples" / f"{k}.mp4").is_file()]
+
+
+@app.post("/api/tg/live/sample")
+def live_sample(request: Request, name: str):
+    """Готовая запись со стенда — тот же путь, что у загруженной: кадры на TPU, тревоги в бот."""
+    _live_user(request)
+    src = DATA / "samples" / f"{name}.mp4"
+    if name not in SAMPLES or not src.is_file():
+        raise HTTPException(404, "нет такого примера")
+    _live_free()
+    path = DATA / "uploads" / f"live-{int(time.time())}.mp4"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, path)
+    return _start_live(path, f"Лайв {len(live) + 1}: {SAMPLES[name].removeprefix('Пример: ')}")
 
 
 @app.get("/api/tg/thumb")

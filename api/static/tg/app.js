@@ -580,10 +580,26 @@
     put(v, '<section class="sec">' + secH('04', 'Камеры · лайв', '') +
       (isBoss() ? '<label class="drop card" id="drop"><input type="file" accept="video/*" id="file"><canvas data-still="upload"></canvas>' +
       '<span><b>Загрузить видео</b><span>Запись пойдёт в анализ как живая камера: нарушения и тревоги — как с настоящих камер.</span></span></label>' : '') +
+      (isBoss() ? '<div class="samples" id="samples"></div>' : '') +
       '<div id="upl"></div><div id="lives">' + skel(1, 220) + '</div></section>' +
       '<section class="sec">' + secH('05', 'Камеры цеха', '<span class="live-dot" id="camsMeta">live</span>') +
       '<div class="cam-grid" id="camGrid">' + skel(2, 110) + '</div></section>');
     if (isBoss()) $('#file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) upload(f); e.target.value = ''; });
+    if (isBoss()) api('/api/tg/live/samples').then((list) => {
+      const box = $('#samples');
+      if (!box || !Array.isArray(list) || !list.length) return;
+      put(box, '<p class="note">Нет записи под рукой — запустите готовую: кадры уйдут на TPU, тревога придёт в бот</p><div class="btn-row">' +
+        list.map((x) => '<button class="btn ghost sm" type="button" data-sample="' + esc(x.name) + '">' + esc(x.title.replace('Пример: ', '')) + '</button>').join('') + '</div>');
+      $$('[data-sample]', box).forEach((b) => b.addEventListener('click', async () => {
+        busy(b, true);
+        try {
+          const r = await api('/api/tg/live/sample?name=' + encodeURIComponent(b.dataset.sample), { method: 'POST' });
+          hap.ok(); toast('Запущено: ' + (r.title || ''), 'ok');
+          if (S.refresh) S.refresh();
+        } catch (e) { fail(e); }
+        busy(b, false);
+      }));
+    }).catch(() => {});
     let camIds = null;
     const refreshCams = () => api('/api/tg/cams').then((list) => {
       list = Array.isArray(list) ? list : [];

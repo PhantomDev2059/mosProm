@@ -360,6 +360,9 @@ table.who td.c { color: var(--crit); font-weight: 700; }
 .live-card .shot { aspect-ratio: 16 / 9; }
 .live-card .rec { left: auto; right: 9px; }
 .live-card .meta { padding: 10px 12px 12px; }
+.samples { margin-top: 12px; }
+.samples .note { margin: 0 0 8px; }
+.samples .btn-row { flex-wrap: wrap; gap: 8px; }
 .cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cam-tile { cursor: pointer; }
 .cam-tile .shot { aspect-ratio: 16 / 9; }

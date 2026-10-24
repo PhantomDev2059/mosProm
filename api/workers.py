@@ -366,6 +366,8 @@ class VideoWorker(threading.Thread):
             idx, t_start, video_t = 0, time.time(), 0.0
             inflight: deque = deque()
             replay = self._replay() if is_file else None
+            if replay is not None:                      # уже посчитано на TPU — CPU почти не нужен, фон не ждёт
+                LIVE_RUNNING.discard(self.proc.cfg.id)
             while not self.stop_flag.is_set():
                 if LIVE_RUNNING and is_file and not is_live:
                     paused = time.time()

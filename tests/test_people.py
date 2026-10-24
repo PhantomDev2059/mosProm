@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -6,8 +7,7 @@ import pytest
 from api.people import PeopleIndex
 from engine.faces import MATCH_THRESHOLD, FaceEngine, similarity
 
-REAL_MODELS = Path("/workspace/linq/models/"
-                   "faces")
+REAL_MODELS = Path(os.environ.get("LINQ_FACE_MODELS", "/workspace/linq/models/faces"))
 BOX = [10, 10, 70, 190]
 
 
