@@ -16,6 +16,7 @@ import numpy as np
 
 from engine.backends import LinqCloudBackend, LinqTpuBackend, OnnxBackend
 from engine.config import CameraConfig
+from engine.dets_io import from_json, load_replay, replay_path
 from engine.detector import Detector, ModelSpec
 from engine.events import Event, EventManager
 from engine.geometry import iou
@@ -133,7 +134,7 @@ class SourceProcessor:
             res = self.pipeline.process(frame, now, datetime.now())
         else:
             self.pipeline.frame_shape = frame.shape[:2]
-            res = self.pipeline.step(detections, now, datetime.now())
+            res = self.pipeline.step(self.pipeline.enrich(frame, detections), now, datetime.now())
         annotated = draw(frame, self.cfg.scene, res)
         self._flush_pending(frame, res, now)
         ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -231,6 +232,19 @@ class SourceProcessor:
                 "active": len(self.events.active)}
 
 
+class _Done:
+    """Готовый результат в интерфейсе Future — для кадров с детекциями из прогона на TPU."""
+
+    def __init__(self, value):
+        self._v = value
+
+    def result(self):
+        return self._v
+
+    def done(self):
+        return True
+
+
 class VideoWorker(threading.Thread):
     """Видеофайл (по кругу, в реальном времени) или RTSP-поток."""
 
@@ -240,6 +254,16 @@ class VideoWorker(threading.Thread):
         self.source = source
         self.stop_flag = threading.Event()
         self._infer = ThreadPoolExecutor(max_workers=FRAMES_INFLIGHT, thread_name_prefix=f"frames-{proc.cfg.id}")
+
+    def _replay(self):
+        if os.environ.get("LINQ_REPLAY", "0") != "1":
+            return None
+        names = [d.spec.name for d in self.proc.pipeline.detectors]
+        data = load_replay(replay_path(Path(os.environ.get("LINQ_DATA", "/workspace/linq/data")), self.proc.cfg.id),
+                           self.proc.cfg.source, names)
+        if data:
+            log.info("камера %s: воспроизведение %d кадров, посчитанных на TPU", self.proc.cfg.id, len(data))
+        return data
 
     def _finish(self, item) -> None:
         frame, now, fut = item
@@ -260,6 +284,7 @@ class VideoWorker(threading.Thread):
             is_file = not self.source.startswith(("rtsp://", "http://", "https://"))
             idx, t_start, video_t = 0, time.time(), 0.0
             inflight: deque = deque()
+            replay = self._replay() if is_file else None
             while not self.stop_flag.is_set():
                 ok = cap.grab()
                 if not ok:
@@ -278,6 +303,11 @@ class VideoWorker(threading.Thread):
                 if frame.shape[1] > 1280:
                     scale = 1280 / frame.shape[1]
                     frame = cv2.resize(frame, (1280, round(frame.shape[0] * scale)))
+                if replay is not None and idx in replay:      # детекции этого кадра уже посчитаны на TPU LinQ
+                    while inflight:
+                        self._finish(inflight.popleft())
+                    self._finish((frame, loop_offset + video_t, _Done([from_json(o) for o in replay[idx]])))
+                    continue
                 # до FRAMES_INFLIGHT кадров одновременно на ускорителе: пока TPU считает кадр N, уже летят N+1…;
                 # трекер и правила получают результаты строго по порядку кадров
                 inflight.append((frame, loop_offset + video_t, self._infer.submit(self.proc.pipeline.detect, frame)))

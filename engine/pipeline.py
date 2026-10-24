@@ -85,10 +85,14 @@ class CameraPipeline:
         active = list(self.events.active.values())
         return FrameResult(detections, tracks, active, {e.track_id for e in active})
 
-    def process(self, frame: np.ndarray, now: float, wall: datetime | None = None) -> FrameResult:
-        self.frame_shape = frame.shape[:2]
-        detections = self.detect(frame)
+    @staticmethod
+    def enrich(frame: np.ndarray, detections: list[Detection]) -> list[Detection]:
+        """Признаки по пикселям кадра; нужны и для детекций, посчитанных заранее или в другом потоке."""
         for d in detections:
             if d.cls == "fire":                     # цвет пламени — для отсева ламп, бликов и жёлтых жилетов
                 d.attrs.update(flame_colors(frame, d.box))
-        return self.step(detections, now, wall)
+        return detections
+
+    def process(self, frame: np.ndarray, now: float, wall: datetime | None = None) -> FrameResult:
+        self.frame_shape = frame.shape[:2]
+        return self.step(self.enrich(frame, self.detect(frame)), now, wall)
