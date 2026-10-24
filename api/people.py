@@ -9,7 +9,7 @@ submit() вызывается при открытии события и ниче
   может лишь совпасть с уже известным — так нет мусорных профилей;
 - два профиля одного человека (анфас и профиль завелись раньше, чем «срослись») сливаются
   автоматически: средние ≥ 0.5, или ≥ 0.4, если оба видны на одной камере;
-- фото профиля — лицо с лучшим качеством (крупное, резкое, анфас).
+- фото профиля — лицо с лучшим качеством (крупное, резкое, анфас) среди уверенных совпадений.
 submit() по одному событию можно звать несколько раз (на открытии и позже): событие без лица
 получит человека, как только лицо появится; уже опознанное — только уточняет профиль.
 Без моделей лиц индекс выключен: submit() ничего не делает, чтение отдаёт пустое.
@@ -45,6 +45,8 @@ PHOTO_SIDE = 160
 MEAN_WINDOW = 50          # средний дескриптор «помнит» примерно столько последних лиц
 MERGE_SIM = 0.50          # автослияние профилей: близость средних
 MERGE_SIM_CAM = 0.40      # … или ниже, если оба человека видны на одной камере (0.3 уже путает людей)
+PHOTO_MIN_SIM = 0.50      # фото профиля меняем только на уверенно «своё» лицо: пограничное совпадение
+                          # (чужой человек в профиль) не должно стать фотографией, по которой ищут себя
 AUTO_NAME = re.compile(r"^Сотрудник №\d+$")
 
 
@@ -147,7 +149,7 @@ class PeopleIndex:
             if prev is not None:
                 # событие уже опознано: новое лицо лишь уточняет того же человека
                 if matched and best["id"] == prev["person_id"]:
-                    self._absorb(best, emb, crop, quality, count=False)
+                    self._absorb(best, emb, crop, quality, best_sim, count=False)
                     if quality > (prev["quality"] or 0.0):
                         self.db.execute("UPDATE event_people SET similarity = ?, quality = ? WHERE event_id = ?",
                                         (best_sim, quality, event_id))
@@ -155,7 +157,7 @@ class PeopleIndex:
                 return
             if matched:
                 pid, sim = best["id"], best_sim
-                self._absorb(best, emb, crop, quality, count=True)
+                self._absorb(best, emb, crop, quality, best_sim, count=True)
             elif f.get("good", True):
                 pid, sim = uuid.uuid4().hex[:12], 1.0
                 photo = self._save_photo(pid, crop)
@@ -169,13 +171,13 @@ class PeopleIndex:
             self._auto_merge(pid)
             self.db.commit()
 
-    def _absorb(self, row, emb: np.ndarray, crop: np.ndarray, quality: float, count: bool) -> None:
+    def _absorb(self, row, emb: np.ndarray, crop: np.ndarray, quality: float, sim: float, count: bool) -> None:
         """Добавить лицо к человеку: сдвинуть средний дескриптор, при лучшем качестве — сменить фото."""
         n = row["n"]
         mean = _norm(np.frombuffer(row["embedding"], np.float32) * min(n, MEAN_WINDOW) + emb)
         self.db.execute("UPDATE people SET embedding = ?, n = ? WHERE id = ?",
                         (mean.tobytes(), n + 1 if count else n, row["id"]))
-        if quality > (row["quality"] or 0.0):
+        if quality > (row["quality"] or 0.0) and sim >= PHOTO_MIN_SIM:
             self._save_photo(row["id"], crop)
             self.db.execute("UPDATE people SET quality = ? WHERE id = ?", (quality, row["id"]))
 

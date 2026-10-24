@@ -135,6 +135,16 @@ def test_bad_face_matches_but_never_creates(tmp_path):
     assert idx.get(idx.people()[0]["id"])["quality"] == pytest.approx(0.6)   # плохое фото не заменило хорошее
 
 
+def test_borderline_match_does_not_replace_photo(tmp_path):
+    a = unit(55)
+    idx = gated(tmp_path, {1: (a, True, 0.3), 2: (near(a, 0.4), True, 0.9), 3: (near(a, 0.8), True, 0.8)})
+    feed(idx, [("e1", 1), ("e2", 2)])
+    pid = idx.person_of("e1")["id"]
+    assert idx.person_of("e2")["id"] == pid and idx.get(pid)["quality"] == pytest.approx(0.3)
+    feed(idx, [("e3", 3)])                                          # уверенное совпадение — фото меняем
+    assert idx.get(pid)["quality"] == pytest.approx(0.8)
+
+
 def test_repeated_submit_per_event(tmp_path):
     a, b = unit(60), unit(61)
     idx = gated(tmp_path, {1: (a, True, 0.3), 2: (near(a, 0.8), True, 0.7), 3: (b, True, 0.9)})

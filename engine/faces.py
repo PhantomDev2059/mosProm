@@ -69,7 +69,7 @@ class FaceEngine:
         return None if r is None else (r["emb"], r["photo"], r["quality"])
 
     def analyze(self, frame_bgr: np.ndarray, person_box) -> dict | None:
-        """То же, что embed(), но с подробностями: emb, photo, quality, size, score, sharp, frontal,
+        """То же, что embed(), но с подробностями: emb, photo, quality, size, score, sharp, frontal, glare,
         good — годится ли лицо, чтобы завести по нему нового сотрудника."""
         H, W = frame_bgr.shape[:2]
         x1, y1, x2, y2 = (float(v) for v in np.asarray(person_box, np.float32).ravel()[:4])
@@ -110,14 +110,17 @@ class FaceEngine:
         px1, py1 = int(max(0, px)), int(max(0, py))
         px2, py2 = int(min(W, px + s)), int(min(H, py + s))
         photo = frame_bgr[py1:py2, px1:px2].copy()
-        sharp = float(cv2.Laplacian(cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY), cv2.CV_32F).var())
+        gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
+        sharp = float(cv2.Laplacian(gray, cv2.CV_32F).var())
+        glare = float((gray[20:100, 20:92] >= 240).mean())    # пересвет лица (контровой свет, блики)
         # анфас: нос посередине между глазами (точки YuNet: правый глаз, левый глаз, нос, …)
         dr, dl = abs(face[8] - face[4]), abs(face[6] - face[8])
         frontal = float(min(dr, dl) / max(dr, dl, 1e-6))
-        # качество для выбора фото профиля: уверенность × размер × резкость × анфас
-        quality = score * min(1.0, size / 80.0) * min(1.0, 0.5 + sharp / 300.0) * (0.4 + 0.6 * frontal)
+        # качество для выбора фото профиля: уверенность × размер × резкость × анфас × без пересвета
+        quality = (score * min(1.0, size / 80.0) * min(1.0, 0.5 + sharp / 300.0) * (0.4 + 0.6 * frontal)
+                   * (1.0 - min(0.8, 3.0 * glare)))
         good = size >= NEW_MIN_PX and score >= NEW_MIN_SCORE and sharp >= NEW_MIN_SHARP
         return dict(emb=feat, photo=photo, quality=float(quality), size=size, score=score, sharp=sharp,
-                    frontal=frontal, good=bool(good))
+                    frontal=frontal, glare=glare, good=bool(good))
 
     similarity = staticmethod(similarity)

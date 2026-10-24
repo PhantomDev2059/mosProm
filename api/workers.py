@@ -182,6 +182,9 @@ class SourceProcessor:
                     continue
                 self._snapshot(frame, res, ev)
                 self.store.update(ev.id, duration_s=ev.duration_s, score=ev.score, details=ev.details, closed=0)
+                # лицо часто видно не в момент тревоги (упал, отвернулся с сигаретой) — ещё 5 с пробуем опознать
+                if self.people is not None and ev.track_id != 0 and now - ev.confirmed_at <= 5.0:
+                    self.people.submit(ev.id, frame, ev.box)
                 self.publish({"kind": "event_update", "event": self.store.get(ev.id)})
 
     def _feed_clips(self, jpg: bytes, now: float) -> None:
