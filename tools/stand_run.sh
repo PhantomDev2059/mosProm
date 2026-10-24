@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 H=${LINQ_HOME:-$HOME/work/linq}
 export TZ=Europe/Moscow LINQ_DATA=$H/data LINQ_MODELS=$H/models LINQ_BACKEND=${LINQ_BACKEND:-tpu}
 export LINQ_BASE=/user/$(id -un)/proxy/8765 PATH=$H/bin:$PATH
-export LINQ_INFER_WORKERS=24 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
+export LINQ_INFER_WORKERS=48 LINQ_FRAMES_INFLIGHT=3 LINQ_TPU_PROCS=12 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
 # пресет ppe2 (дообученные каски) живёт на vast; пока его нет — камеры берут открытую модель СИЗ
 ls $LINQ_MODELS/tpu/ppe2_* >/dev/null 2>&1 || sed -i 's/ppe2, ppe\]/ppe]/; s/\bppe2\b/ppe/g' configs/cameras/*.yaml
 # UR Fall со стенда не скачивается — коридору пока ролик зала

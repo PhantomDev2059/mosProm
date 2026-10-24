@@ -48,76 +48,23 @@ class OnnxBackend:
         return self.session.run(None, {self.input_name: tensor})[0]
 
 
-class _TpuCloud:
-    """Облачный TPU стенда: задачи в RabbitMQ (обмен tpu.direct, очередь input), ответы в свою очередь.
-    pika не потокобезопасна: соединением владеет один поток, run() из любых потоков ждут Future."""
+_GATEWAY = None
 
-    _inst = None
 
-    @classmethod
-    def get(cls):
-        if cls._inst is None:
-            cls._inst = cls()
-        return cls._inst
-
-    def __init__(self):
-        import queue
-        import pika
-        self._pika, self._out, self._fut = pika, queue.Queue(), {}
-        self.host = os.environ.get("LINQ_AMQP_HOST", "10.0.114.30")
-        threading.Thread(target=self._loop, daemon=True, name="tpu-cloud").start()
-
-    def submit(self, uri: str, tensors: dict):
-        from concurrent.futures import Future
-        fut = Future()
-        self._out.put((uri, tensors, fut))
-        return fut
-
-    def _loop(self):
-        import json, uuid
-        from tpu_pycloud_format import (MESSAGE_ID_ATTR_NAME, RESPONSE_ROUTING_KEYS_ATTR_NAME,
-                                        TARGET_URI_ATTR_NAME, PyTask, deserialize, serialize)
-        pika = self._pika
-        while True:
-            try:
-                conn = pika.BlockingConnection(pika.ConnectionParameters(
-                    self.host, 5672, credentials=pika.PlainCredentials("guest", "guest"), heartbeat=60))
-                ch = conn.channel()
-                reply = f"guard_{uuid.uuid4().hex[:8]}"
-                ch.queue_declare(queue=reply, exclusive=True)
-                ch.queue_bind(exchange="tpu.direct", queue=reply, routing_key=reply)
-
-                def on_reply(_ch, _m, props, body):
-                    fut = self._fut.pop((props.headers or {}).get(MESSAGE_ID_ATTR_NAME), None)
-                    if fut is None:
-                        return
-                    data, _, worker = deserialize(body)
-                    if data:
-                        fut.set_result(data)
-                    else:
-                        fut.set_exception(RuntimeError(f"TPU: {worker['error_message']}"))
-
-                ch.basic_consume(reply, on_reply, auto_ack=True)
-                while True:
-                    while not self._out.empty():
-                        uri, tensors, fut = self._out.get_nowait()
-                        mid = uuid.uuid4().hex
-                        self._fut[mid] = fut
-                        ch.basic_publish("tpu.direct", "input", serialize(PyTask(tensors)), pika.BasicProperties(
-                            headers={TARGET_URI_ATTR_NAME: uri, RESPONSE_ROUTING_KEYS_ATTR_NAME: json.dumps([reply]),
-                                     MESSAGE_ID_ATTR_NAME: mid}))
-                    conn.process_data_events(time_limit=0.005)
-            except Exception as e:  # обрыв брокера: всем ждущим ошибка, переподключаемся
-                for f in self._fut.values():
-                    if not f.done():
-                        f.set_exception(ConnectionError(str(e)))
-                self._fut.clear()
-                time.sleep(2)
+def _gateway():
+    """Пул процессов-шлюзов к TPU (engine/tpu_gateway.py), один на сервис."""
+    global _GATEWAY
+    if _GATEWAY is None:
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor
+        _GATEWAY = ProcessPoolExecutor(max_workers=int(os.environ.get("LINQ_TPU_PROCS", "12")),
+                                       mp_context=multiprocessing.get_context("spawn"))
+    return _GATEWAY
 
 
 class LinqCloudBackend:
     """Стенд хакатона: TPU не виден как /dev/tpu, программы выполняет облачный воркер через RabbitMQ.
-    Программа .tpu должна лежать в /auto/cache/<логин>/; хвост модели — ONNX на CPU, как в LinqTpuBackend."""
+    Программа .tpu должна лежать в /auto/cache/<логин>/<папка>/; хвост модели — ONNX на CPU."""
 
     name = "linq-tpu"
 
@@ -127,7 +74,6 @@ class LinqCloudBackend:
         # в кэше программы лежат по папкам (tpu — 640×640, tpu_v2 — 416×416), чтобы одноимённые версии не путались
         sub = os.path.basename(os.path.dirname(program_path))
         self.uri = f"file:///auto/cache/{getpass.getuser()}/{sub}/{os.path.basename(program_path)}?raw=False"
-        self._cloud = _TpuCloud.get()
         opts = ort.SessionOptions()
         # хвост крошечный; пул потоков «на все ядра» в каждой из десятков сессий упирает контейнер в лимит процессов
         opts.intra_op_num_threads, opts.inter_op_num_threads = 1, 1
@@ -137,8 +83,10 @@ class LinqCloudBackend:
         self.last_tpu_ms = 0.0
 
     def run(self, tensor: np.ndarray) -> np.ndarray:
+        from . import tpu_gateway
         t0 = time.perf_counter()
-        feats = self._cloud.submit(self.uri, {self.input_name: np.ascontiguousarray(tensor, np.float32)}).result(30)
+        feats = _gateway().submit(tpu_gateway.run, self.uri, self.input_name,
+                                  np.ascontiguousarray(tensor, np.float32)).result(60)
         self.last_tpu_ms = (time.perf_counter() - t0) * 1e3
         return self._tail.run(None, {k: feats[k] for k in self._tail_inputs})[0]
 

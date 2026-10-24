@@ -1,6 +1,8 @@
 """Обработка источников: видеофайлы и RTSP в отдельных потоках, вебкамера браузера — по кадру."""
 import json
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import threading
 import time
@@ -28,6 +30,7 @@ cv2.setNumThreads(2)       # камеры и так работают в свои
 CLIP_PRE_S = 4.0       # секунд до подтверждения нарушения во фрагменте
 CLIP_POST_S = 4.0      # и после
 REPLAY_TOL_S = 6.0     # видеофайл по кругу: нарушение на той же позиции записи — повтор уже записанного
+FRAMES_INFLIGHT = int(os.environ.get("LINQ_FRAMES_INFLIGHT", "4"))   # кадров камеры одновременно на ускорителе
 
 
 def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Detector]:
@@ -123,9 +126,14 @@ class SourceProcessor:
     def _wall(self, t: float) -> float:
         return self._clock_offset + t
 
-    def process(self, frame: np.ndarray, now: float) -> bytes:
+    def process(self, frame: np.ndarray, now: float, detections: list | None = None) -> bytes:
+        """detections — уже посчитанные детекции кадра (конвейер VideoWorker держит несколько кадров в полёте)."""
         t0 = time.perf_counter()
-        res = self.pipeline.process(frame, now, datetime.now())
+        if detections is None:
+            res = self.pipeline.process(frame, now, datetime.now())
+        else:
+            self.pipeline.frame_shape = frame.shape[:2]
+            res = self.pipeline.step(detections, now, datetime.now())
         annotated = draw(frame, self.cfg.scene, res)
         self._flush_pending(frame, res, now)
         ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -231,6 +239,14 @@ class VideoWorker(threading.Thread):
         self.proc = proc
         self.source = source
         self.stop_flag = threading.Event()
+        self._infer = ThreadPoolExecutor(max_workers=FRAMES_INFLIGHT, thread_name_prefix=f"frames-{proc.cfg.id}")
+
+    def _finish(self, item) -> None:
+        frame, now, fut = item
+        try:
+            self.proc.process(frame, now, fut.result())
+        except Exception:                               # один сбойный кадр не должен останавливать камеру
+            log.exception("камера %s: ошибка обработки кадра", self.proc.cfg.id)
 
     def run(self) -> None:
         loop_offset = 0.0
@@ -243,6 +259,7 @@ class VideoWorker(threading.Thread):
             step = max(1, round(src_fps / self.proc.cfg.analysis_fps))
             is_file = not self.source.startswith(("rtsp://", "http://", "https://"))
             idx, t_start, video_t = 0, time.time(), 0.0
+            inflight: deque = deque()
             while not self.stop_flag.is_set():
                 ok = cap.grab()
                 if not ok:
@@ -261,10 +278,13 @@ class VideoWorker(threading.Thread):
                 if frame.shape[1] > 1280:
                     scale = 1280 / frame.shape[1]
                     frame = cv2.resize(frame, (1280, round(frame.shape[0] * scale)))
-                try:
-                    self.proc.process(frame, loop_offset + video_t)
-                except Exception:                               # один сбойный кадр не должен останавливать камеру
-                    log.exception("камера %s: ошибка обработки кадра", self.proc.cfg.id)
+                # до FRAMES_INFLIGHT кадров одновременно на ускорителе: пока TPU считает кадр N, уже летят N+1…;
+                # трекер и правила получают результаты строго по порядку кадров
+                inflight.append((frame, loop_offset + video_t, self._infer.submit(self.proc.pipeline.detect, frame)))
+                while len(inflight) >= FRAMES_INFLIGHT or (inflight and inflight[0][2].done()):
+                    self._finish(inflight.popleft())
+            while inflight:
+                self._finish(inflight.popleft())
             cap.release()
             loop_offset += video_t + 1.0
             if not self.proc.cfg.loop and is_file:

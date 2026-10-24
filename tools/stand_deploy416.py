@@ -9,7 +9,7 @@ from linq_remote import Hub, load_env  # noqa: E402
 load_env(Path(r"D:\dev\mosprom\.env"))
 hub = Hub(os.environ["LINQ_HUB"], os.environ["LINQ_USER"], os.environ["LINQ_PASS"])
 G = Path(__file__).resolve().parent.parent
-src = Path(r"D:\dev\mosprom\models\guard416\tpu")
+src = Path(sys.argv[1] if len(sys.argv) > 1 else r"D:\dev\mosprom\models\guard416\tpu")
 if hub.s.get(f"{hub.base}/api/contents/linq/models/tpu_v2", timeout=30).status_code == 404:
     hub.s.put(f"{hub.base}/api/contents/linq/models/tpu_v2", json={"type": "directory"}, timeout=30).raise_for_status()
 names = []
