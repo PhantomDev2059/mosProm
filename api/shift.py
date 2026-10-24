@@ -35,7 +35,8 @@ log = logging.getLogger("linqguard.shift")
 
 ROLES = ("worker", "operator", "supervisor", "director")
 ROLE_TITLES = {"worker": "Рабочий", "operator": "Оператор", "supervisor": "Начальник смены", "director": "Руководитель"}
-BOSSES = ("supervisor", "director")                  # принимают и устраняют тревоги, закрывают смену
+BOSSES = ("supervisor", "director")                  # закрывают смену, меняют настройки
+RESPONDERS = ("supervisor",)                         # принимают и устраняют тревоги; руководитель — только запрос отчёта
 VIEWERS = ("operator", *BOSSES)                      # видят тревоги и весь журнал смены
 SEVERITY_TITLES = {"critical": "критично", "high": "высокий", "medium": "средний"}
 STATUS_TITLES = {"new": "новое", "confirmed": "подтверждено", "false": "ложное", "sent_to_master": "передано мастеру",

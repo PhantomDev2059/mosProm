@@ -157,8 +157,13 @@
     setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, kind === 'err' ? 4200 : 2800);
   }
   const ic = (n) => '<svg><use href="#i-' + n + '"/></svg>';
-  const img = (src, alt) => (src ? '<img src="' + esc(src) + '" alt="' + esc(alt || '') + '" loading="lazy" decoding="async">' : '');
-  const shot = (src, tag, rec) => '<span class="shot">' + img(src) + (rec ? '<span class="rec">' + rec + '</span>' : '') + (tag ? '<span class="tag">' + esc(tag) + '</span>' : '') + '</span>';
+  // миниатюра не отдалась (старый сервер, нет кадра) — показываем исходный кадр
+  window.__lgFull = (src) => { const m = /[?&]src=([^&]+)/.exec(src || ''); return m ? decodeURIComponent(m[1]) : src; };
+  const img = (src, alt) => (src ? '<img src="' + esc(src) + '" alt="' + esc(alt || '') + '" loading="lazy" decoding="async"' +
+    (src.indexOf('/api/tg/thumb') === 0 ? ' onerror="this.onerror=null;this.src=__lgFull(this.getAttribute(\'src\'))"' : '') + '>' : '');
+  // в списках — уменьшенный кадр с сервера: через туннель 1280-пиксельные снимки идут медленно
+  const th = (src) => (src && src.startsWith('/media/') && !src.includes('/media/face-') ? '/api/tg/thumb?w=480&src=' + encodeURIComponent(src) : src);
+  const shot = (src, tag, rec) => '<span class="shot">' + img(th(src)) + (rec ? '<span class="rec">' + rec + '</span>' : '') + (tag ? '<span class="tag">' + esc(tag) + '</span>' : '') + '</span>';
   const facePh = (p, extra) => '<span class="ph">' + (p && p.photo ? img(p.photo, p.name) : '<span class="ini">' + esc(initials(p && p.name)) + '</span>') + (extra || '') + '</span>';
   const sev = (s) => '<span class="sev ' + esc(s) + '">' + (SEV[s] || esc(s)) + '</span>';
   const skel = (n, h) => Array.from({ length: n }, () => '<div class="skel" style="height:' + h + 'px"></div>').join('');
@@ -318,16 +323,16 @@
   }
   const overdue = (a) => !!(S.shift && S.shift.sla && (S.shift.sla.overdue_ids || []).map(String).indexOf(String(a.event_id)) >= 0);
   function alarmCard(a) {
-    const ack = a.status === 'ack', escd = !!a.escalated_at, id = esc(a.event_id), act = isBoss();
+    const ack = a.status === 'ack', escd = !!a.escalated_at, id = esc(a.event_id), act = S.role === 'supervisor';   // принимает и устраняет только начальник смены
     let st = ack ? 'Принял: <b>' + esc(a.ack_by || '—') + '</b> в ' + hm(a.ack_at) : 'Ждёт реакции начальника смены';
-    if (escd) st += '<br><b style="color:var(--crit)">Эскалировано руководителю в ' + hm(a.escalated_at) + '</b>';
+    if (escd) st += '<br><b style="color:var(--crit)">Передано руководителю в ' + hm(a.escalated_at) + '</b>';
     if (a.asked_at) st += '<br>Руководитель запросил отчёт в ' + hm(a.asked_at);
-    const ask = S.role === 'director' && escd && !a.asked_at ? '<button class="btn signal sm" type="button" data-act="ask" data-id="' + id + '">Запросить отчёт</button>' : '';
+    const ask = S.role === 'director' && !a.asked_at ? '<button class="btn signal sm" type="button" data-act="ask" data-id="' + id + '">Запросить отчёт</button>' : '';
     const btns = act ? '<div class="btn-row">' + (ack ? '' : '<button class="btn ghost" type="button" data-act="ack" data-id="' + id + '">Принял</button>') +
       '<button class="btn" type="button" data-act="resolve" data-id="' + id + '">Устранено</button></div>' : '';
     const fl = S.flash && S.flash.id === String(a.event_id) && Date.now() < S.flash.until;
     return '<article class="card crop alarm' + (ack ? ' ack' : '') + (escd ? ' esc' : '') + (fl ? ' flash' : '') + '" id="al-' + id + '">' +
-      '<button class="shot" type="button" data-act="snap" data-id="' + id + '">' + img(a.snapshot) + '<span class="rec">' + hm(a.created) + '</span><span class="tag">' + esc(camShort(a)) + '</span></button>' +
+      '<button class="shot" type="button" data-act="snap" data-id="' + id + '">' + img(th(a.snapshot)) + '<span class="rec">' + hm(a.created) + '</span><span class="tag">' + esc(camShort(a)) + '</span></button>' +
       '<div class="alarm-b"><div class="row-top">' + sev(a.severity || 'critical') + (overdue(a) ? '<span class="ast late">срок прошёл</span>' : '') + '<span class="mono since" data-since="' + a.created + '"></span></div>' +
       '<h3>' + esc(a.title) + '</h3><div class="where">' + esc([camLabel(a), zoneOf(a)].filter(Boolean).join(' · ')) + '</div>' +
       (a.person ? '<div class="who">Сотрудник: <b>' + esc(a.person.name) + '</b></div>' : '') + srcLine(a) +
@@ -345,8 +350,11 @@
       const open = S.alarms.filter((a) => a.status !== 'resolved').sort((a, b) => (a.escalated_at ? w.esc : w[a.status] || 1) - (b.escalated_at ? w.esc : w[b.status] || 1) || b.created - a.created);
       const done = S.alarms.filter((a) => a.status === 'resolved');
       let h = '<section class="sec">' + secH('01', 'Тревоги', 'срок устранения ' + fmtMin(S.me.escalate_min));
-      if (!isBoss()) h += '<p class="note" style="margin:-4px 0 14px">Только просмотр: принимает и закрывает тревоги начальник смены.</p>';
-      h += open.length ? open.map(alarmCard).join('') : empty('ok', 'Открытых тревог нет', 'Критичные нарушения появятся здесь сразу — со сроком устранения.');
+      if (S.role === 'director') h += '<p class="note" style="margin:-4px 0 14px">Принимает и устраняет тревоги начальник смены. Если нужен статус — запросите отчёт.</p>';
+      else if (S.role !== 'supervisor') h += '<p class="note" style="margin:-4px 0 14px">Только просмотр: принимает и закрывает тревоги начальник смены.</p>';
+      // одна тревога со странными полями не должна ломать весь список
+      const card = (a) => { try { return alarmCard(a); } catch (e) { console.error('alarm card', a, e); return ''; } };
+      h += open.length ? open.map(card).join('') : empty('ok', 'Открытых тревог нет', 'Критичные нарушения появятся здесь сразу — со сроком устранения.');
       if (done.length) h += '<details class="resolved"' + (S.resOpen ? ' open' : '') + '><summary>Устранено за смену · ' + done.length + '</summary>' + done.map(resRow).join('') + '</details>';
       put(v, h + '</section>');
       v.dataset.drawn = '1';

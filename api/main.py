@@ -50,7 +50,10 @@ async def public_guard(request: Request, call_next):
         frame = path.startswith("/api/cameras/") and path.endswith("/frame.jpg")
         if not (path == "/app" or path.startswith(PUBLIC_PATHS) or frame):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
-    return await call_next(request)
+    response = await call_next(request)
+    if request.url.path.startswith("/app"):        # Telegram держит мини-апп в кэше — без этого видна старая версия
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 class Hub:
@@ -587,6 +590,25 @@ async def live_upload(request: Request, name: str):
     start_camera(cfg)
     live[cid] = {"camera_id": cid, "title": title, "started": time.time()}
     return {"camera_id": cid, "title": title}
+
+
+@app.get("/api/tg/thumb")
+def tg_thumb(src: str, w: int = 480):
+    """Уменьшенный кадр для списков мини-аппа: через туннель 1280-пиксельные снимки идут медленно."""
+    name = Path(src).name
+    w = max(120, min(int(w), 960))
+    path = MEDIA / name
+    if not name or not path.is_file():
+        raise HTTPException(404, "нет кадра")
+    out = MEDIA / "thumbs" / f"{w}-{name}"
+    if not out.exists() or out.stat().st_mtime < path.stat().st_mtime:   # кадр события перезаписывается лучшим
+        img = cv2.imread(str(path))
+        if img is None:
+            raise HTTPException(404, "нет кадра")
+        out.parent.mkdir(exist_ok=True)
+        small = cv2.resize(img, (w, round(img.shape[0] * w / img.shape[1])), interpolation=cv2.INTER_AREA)
+        cv2.imwrite(str(out), small, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return FileResponse(out, headers={"Cache-Control": "public, max-age=60"})
 
 
 @app.get("/api/tg/live")

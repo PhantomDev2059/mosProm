@@ -233,7 +233,11 @@ def test_routes(svc, tmp_path):
     assert c.get("/api/tg/alarms", headers=worker).status_code == 403
     s.on_event_opened(event(s, "e1"))
     assert [a["event_id"] for a in c.get("/api/tg/alarms", headers=boss).json()] == ["e1"]
-    assert c.post("/api/tg/alarms/e1/resolve", json={"note": "ok"}, headers=boss).json()["status"] == "resolved"
+    # руководитель тревогу не закрывает — только начальник смены; руководитель может запросить отчёт
+    assert c.post("/api/tg/alarms/e1/ack", headers=boss).status_code == 403
+    assert c.post("/api/tg/alarms/e1/resolve", json={"note": "ok"}, headers=boss).status_code == 403
+    sup = {"X-Demo-User": "s", "X-Demo-Role": "supervisor"}
+    assert c.post("/api/tg/alarms/e1/resolve", json={"note": "ok"}, headers=sup).json()["status"] == "resolved"
     shift = c.get("/api/tg/shift", headers=boss).json()
     assert shift["totals"]["violations"] == 1 and shift["sla"]["alarms"] == 1 and "alarms" not in shift
     r = c.get("/api/tg/csv?scope=shift", headers=boss)

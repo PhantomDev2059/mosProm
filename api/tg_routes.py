@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from .shift import BOSSES, VIEWERS, ShiftService
+from .shift import BOSSES, RESPONDERS, VIEWERS, ShiftService
 from .store import EventStore
 from .telegram import TelegramBot
 
@@ -54,6 +54,11 @@ def make_router(svc: ShiftService) -> APIRouter:
     def boss(u: dict = Depends(user)) -> dict:
         if u["role"] not in BOSSES:
             raise HTTPException(403, "только для начальника смены и руководителя")
+        return u
+
+    def responder(u: dict = Depends(user)) -> dict:
+        if u["role"] not in RESPONDERS:
+            raise HTTPException(403, "принимает и устраняет тревогу начальник смены")
         return u
 
     def viewer(u: dict = Depends(user)) -> dict:
@@ -122,11 +127,11 @@ def make_router(svc: ShiftService) -> APIRouter:
         return svc.alarms(status, since)
 
     @r.post("/alarms/{eid}/ack")
-    def ack(eid: str, u: dict = Depends(boss)):
+    def ack(eid: str, u: dict = Depends(responder)):
         return alarm_or_404(svc.ack(eid, u["name"]))
 
     @r.post("/alarms/{eid}/resolve")
-    def resolve(eid: str, body: NoteIn, u: dict = Depends(boss)):
+    def resolve(eid: str, body: NoteIn, u: dict = Depends(responder)):
         return alarm_or_404(svc.resolve(eid, u["name"], body.note.strip()[:500]))
 
     @r.post("/alarms/{eid}/ask")

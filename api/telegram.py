@@ -18,7 +18,7 @@ import threading
 import time
 from pathlib import Path
 
-from .shift import BOSSES, ROLE_TITLES, VIEWERS, ShiftService, esc, fmt_dur, hm, render_card, user_name
+from .shift import BOSSES, RESPONDERS, ROLE_TITLES, VIEWERS, ShiftService, esc, fmt_dur, hm, render_card, user_name
 
 log = logging.getLogger("linqguard.telegram")
 
@@ -509,9 +509,11 @@ class TelegramBot:
             late = " · ⌛ срок прошёл" if self.svc.clock() > a["deadline"] else ""
             lines.append(f"{i}. {icon} <b>{esc(a['title'])}</b> · {self.place(a)}\n"
                          f"    🕐 <code>{hm(a['created'])}</code> · ⏳ до <code>{hm(a['deadline'])}</code> · {state}{late}")
-            if u["role"] in BOSSES:
+            if u["role"] in RESPONDERS:
                 row = [{"text": f"✅ {i} Принял", "callback_data": f"ack:{a['event_id']}"}] if a["status"] == "open" else []
                 buttons.append(row + [{"text": f"🛠 {i} Устранено", "callback_data": f"res:{a['event_id']}"}])
+            elif u["role"] == "director" and not a.get("asked_at"):      # руководитель не закрывает сам — спрашивает
+                buttons.append([{"text": f"📋 {i} Запросить отчёт", "callback_data": f"ask:{a['event_id']}"}])
         if len(alarms) > 8:
             lines.append(f"… и ещё {len(alarms) - 8} — в приложении")
         self._aux(chat, "\n".join(lines), [b for b in buttons + [self.app_button()] if b], ttl=300)
@@ -605,6 +607,8 @@ class TelegramBot:
             self.ensure_commands(chat, u)
             self._answer(cq, f"Роль: {ROLE_TITLES[arg]}")
             return self._menu(chat, u, edit_mid=msg.get("message_id"))
+        if kind in ("ack", "res", "note") and u["role"] not in RESPONDERS:
+            return self._answer(cq, "Принимает и устраняет тревогу начальник смены")
         if u["role"] not in BOSSES:
             return self._answer(cq, "Только для начальника смены и руководителя")
         if kind == "ack":
