@@ -3,7 +3,7 @@ import numpy as np
 
 from ..geometry import ioa
 from ..scene import Scene
-from ..types import L_ANKLE, L_SHOULDER, L_WRIST, NOSE, PERSON, R_ANKLE, R_SHOULDER, R_WRIST, Detection, Track
+from ..types import L_ANKLE, L_HIP, L_SHOULDER, L_WRIST, NOSE, PERSON, R_ANKLE, R_HIP, R_SHOULDER, R_WRIST, Detection, Track
 from .base import RuleContext, Signal, register
 
 # «machinery» открытой модели СИЗ срабатывает на леса, щиты подстанции и стеллажи — в технику не берём
@@ -18,8 +18,29 @@ def head_box(det: Detection) -> np.ndarray:
 
 
 def torso_box(det: Detection) -> np.ndarray:
+    """Корпус: по плечам и бёдрам скелета, если они видны; иначе — доля рамки (на крупном плане рамка обрезана,
+    и «18–65 % высоты» попадает куда угодно, только не на жилет)."""
+    pts = [det.keypoint(i) for i in (L_SHOULDER, R_SHOULDER, L_HIP, R_HIP)]
+    sh = [p for p in pts[:2] if p is not None]
+    if len(sh) == 2:
+        xs = [p[0] for p in pts if p is not None]
+        ys = [p[1] for p in pts if p is not None]
+        width = max(xs) - min(xs)
+        top = min(p[1] for p in sh)
+        bottom = max(ys) if any(p is not None for p in pts[2:]) else min(det.box[3], top + 2.2 * width)
+        pad = 0.15 * width
+        return np.array([max(det.box[0], min(xs) - pad), top - pad, min(det.box[2], max(xs) + pad), bottom + pad],
+                        np.float32)
     x1, y1, x2, y2 = det.box
     return np.array([x1, y1 + (y2 - y1) * 0.18, x2, y1 + (y2 - y1) * 0.65], np.float32)
+
+
+def overlap_small(a: np.ndarray, b: np.ndarray) -> float:
+    """Пересечение относительно меньшей рамки: жилет крупным планом больше «зоны корпуса» — это всё равно жилет."""
+    iw = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    ih = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    small = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+    return float(iw * ih / small) if small > 0 else 0.0
 
 
 def items_near(ctx: RuleContext, classes: tuple[str, ...], region: np.ndarray, min_ioa: float = 0.5) -> list[Detection]:
@@ -70,7 +91,8 @@ class NoVest:
         if det.height < self.min_person_px or not ctx.zone.contains(det.foot):
             return None
         region = torso_box(det)
-        if items_near(ctx, ("vest",), region, 0.3):
+        vests = [t.det for t in ctx.tracks if t.cls == "vest" and t.last_seen == ctx.now]
+        if any(overlap_small(v.box, region) >= 0.3 for v in vests):
             return None
         no_vest = items_near(ctx, ("no_vest",), region, 0.3)
         if no_vest:
