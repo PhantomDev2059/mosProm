@@ -124,7 +124,9 @@ class LinqCloudBackend:
     def __init__(self, program_path: str, tail_onnx: str, input_name: str = "images"):
         import getpass
         import onnxruntime as ort
-        self.uri = f"file:///auto/cache/{getpass.getuser()}/{os.path.basename(program_path)}?raw=False"
+        # в кэше программы лежат по папкам (tpu — 640×640, tpu_v2 — 416×416), чтобы одноимённые версии не путались
+        sub = os.path.basename(os.path.dirname(program_path))
+        self.uri = f"file:///auto/cache/{getpass.getuser()}/{sub}/{os.path.basename(program_path)}?raw=False"
         self._cloud = _TpuCloud.get()
         opts = ort.SessionOptions()
         # хвост крошечный; пул потоков «на все ядра» в каждой из десятков сессий упирает контейнер в лимит процессов

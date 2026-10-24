@@ -35,7 +35,7 @@ def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Dete
     reg = json.loads(registry_path.read_text())
     out = {}
     for name, m in reg.items():
-        spec = ModelSpec(name=name, kind=m["kind"], path=m["path"], conf=m.get("conf", 0.4),
+        spec = ModelSpec(name=name, kind=m["kind"], path=m["path"], conf=m.get("conf", 0.4), imgsz=m.get("imgsz", 640),
                          class_map={int(k): v for k, v in m["class_map"].items()})
         # tpu_v2 — улучшенное квантование (калибровка с объектами + дообучение порогов), где оно есть
         tpu_dir = next((d for d in (registry_path.parent / "tpu_v2", registry_path.parent / "tpu")
