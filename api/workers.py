@@ -16,15 +16,18 @@ from engine.backends import LinqTpuBackend, OnnxBackend
 from engine.config import CameraConfig
 from engine.detector import Detector, ModelSpec
 from engine.events import Event, EventManager
+from engine.geometry import iou
 from engine.pipeline import CameraPipeline, FrameResult
 from engine.render import draw
 
 from .store import EventStore
 
 log = logging.getLogger("linqguard")
+cv2.setNumThreads(2)       # камеры и так работают в своих потоках; внутренний пул OpenCV на все ядра им только мешает
 
 CLIP_PRE_S = 4.0       # секунд до подтверждения нарушения во фрагменте
 CLIP_POST_S = 4.0      # и после
+REPLAY_TOL_S = 6.0     # видеофайл по кругу: нарушение на той же позиции записи — повтор уже записанного
 
 
 def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Detector]:
@@ -69,6 +72,9 @@ class SourceProcessor:
         self._ring: deque = deque(maxlen=max(1, int(cfg.analysis_fps * CLIP_PRE_S)))
         self._clips: dict[str, dict] = {}
         self._clock_offset = time.time()
+        self._pass_no, self._pass_start = 0, 0.0
+        self._recorded: list[tuple[str, str, float, np.ndarray, str]] = []   # (зона, тип, позиция, рамка, id)
+        self._replay_of: dict[str, str] = {}      # событие повторного круга → исходное событие в журнале
 
     def rebuild(self, cfg: CameraConfig) -> None:
         detectors = self.pipeline.detectors
@@ -84,8 +90,31 @@ class SourceProcessor:
         self._pending.append(("update", ev))
 
     def _on_close(self, ev: Event) -> None:
+        orig = self._replay_of.pop(ev.id, None)
+        if orig is not None:                       # повтор с круга демо-файла: исходное событие снова неактивно
+            self.store.update(orig, closed=1)
+            self.publish({"kind": "event_close", "event": self.store.get(orig)})
+            return
+        if self.store.get(ev.id) is None:
+            return
         self.store.update(ev.id, duration_s=ev.duration_s, closed=1, score=ev.score)
         self.publish({"kind": "event_close", "event": self.store.get(ev.id)})
+
+    def new_pass(self, start: float) -> None:
+        """Видеофайл пошёл на новый круг. События прошлого прохода закрываются и не тянутся через весь
+        ролик; нарушения, уже записанные на этой позиции записи, повторно не регистрируются — та же запись,
+        то же нарушение. На кадре и в счётчике активных они по-прежнему видны."""
+        self.events.close_all()
+        self._pass_no += 1
+        self._pass_start = start
+
+    def _replay_target(self, ev: Event, pos: float) -> str | None:
+        """id уже записанного события, которое повторяет это (тот же тип, зона, место в кадре и в записи)."""
+        if not self._pass_no:
+            return None
+        box = np.asarray(ev.box)
+        return next((eid for z, t, p, b, eid in self._recorded if z == ev.zone and t == ev.type
+                     and abs(p - pos) <= REPLAY_TOL_S and (ev.track_id == 0 or iou(b, box) >= 0.3)), None)
 
     def _wall(self, t: float) -> float:
         return self._clock_offset + t
@@ -114,6 +143,14 @@ class SourceProcessor:
         pending, self._pending = self._pending, []
         for kind, ev in pending:
             if kind == "open":
+                pos = ev.started_at - self._pass_start
+                orig = self._replay_target(ev, pos)
+                if orig is not None:                    # без новой записи и оповещения, исходное — снова активно
+                    self._replay_of[ev.id] = orig
+                    self.store.update(orig, closed=0)
+                    self.publish({"kind": "event_update", "event": self.store.get(orig)})
+                    continue
+                self._recorded.append((ev.zone, ev.type, pos, np.asarray(ev.box), ev.id))
                 snap = self._snapshot(frame, res, ev)
                 started = self._wall(ev.started_at)
                 zone = next((z for z in self.cfg.scene.zones if z.id == ev.zone), None)
@@ -228,3 +265,5 @@ class VideoWorker(threading.Thread):
             loop_offset += video_t + 1.0
             if not self.proc.cfg.loop and is_file:
                 break
+            if is_file:
+                self.proc.new_pass(loop_offset)

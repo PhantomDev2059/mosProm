@@ -490,7 +490,7 @@ async function loadQuality() {
   $("#q-fall").innerHTML = f ? `<div class="q-cols">${qBlock("правило · проверка на чётных записях, система их не видела", f.test)}${ml ? qBlock("классификатор на позе · та же проверка", ml.test) : ""}</div>
     <p class="muted small">Оба метода настраивались только на нечётных записях. Правило (используется по умолчанию) ошибается реже, классификатор находит больше падений, но чаще зовёт зря.
     В кейсе точность важнее количества сценариев, поэтому в работе — правило. На настроечной половине правило дало F1 ${f.tune.f1.toFixed(2)}${ml ? `, классификатор — ${ml.tune.f1.toFixed(2)}` : ""}: разница с проверкой показывает, насколько мал набор (15 падений на половину).</p>
-    <p class="muted small">По всему набору: ложных тревог в час — ${f.all_report.false_alarms_per_hour ?? "—"}, медиана времени до тревоги — ${f.all_report.latency_median_s ?? "—"} с,
+    <p class="muted small">По всему набору: ложных тревог в час — ${f.all_report.false_alarms_per_hour == null ? "—" : Math.round(f.all_report.false_alarms_per_hour)}, медиана времени до тревоги — ${f.all_report.latency_median_s ?? "—"} с,
     взвешенное покрытие времени — ${pct(f.all_report.weighted_time_coverage)}. Правило: резкое опускание головы ≥ ${Math.round(f.best_params.head_drop * 100)}% роста за ${f.best_params.drop_window_s} с,
     подтверждение ${f.confirm_s} с. Перебрано вариантов: ${f.grid_size}. Ограничение набора: камера в углу комнаты и разрешение 320×240 — на заводских камерах человек крупнее.</p>`
     : `<p class="empty">Оценка ещё не запускалась.</p>`;
@@ -498,13 +498,23 @@ async function loadQuality() {
   Object.entries(q.quant).sort().forEach(([name, vers]) => Object.entries(vers).sort().forEach(([v, m]) => rows.push(`<tr><td>${esc(name)}</td><td>${v}</td>
     <td class="num">${pct(m.recall_vs_fp32)}</td><td class="num">${m.precision_vs_fp32 == null ? "—" : pct(1 - m.precision_vs_fp32)}</td>
     <td class="num">${m.mean_iou ?? "—"}</td><td class="num">${m.keypoint_err_heights == null ? "—" : (m.keypoint_err_heights * 100).toFixed(1)}</td>
-    <td class="num">${m.fp32_objects}</td><td class="small">${m.smart ? "с объектами" : "равномерная"}${m.finetune ? ` + дообучение ${m.finetune} эп.` : ""}</td></tr>`)));
+    <td class="num">${m.fp32_objects}</td><td class="small">${m.smart ? "с объектами" : "равномерная"}${m.images ? ` + ${m.images} обучающих` : ""}${m.finetune ? ` + дообучение ${m.finetune} эп.` : ""}</td></tr>`)));
   $("#q-quant").innerHTML = rows.join("") || `<tr><td colspan="8" class="empty">Проверка ещё не запускалась.</td></tr>`;
   const p = q.ppe;
   $("#q-ppe").innerHTML = p ? `<div class="q-num"><div><b>${pct(p.map50)}</b><span>mAP@0.5 на тестовой части</span></div>
     <div><b>${pct(p.map)}</b><span>mAP@0.5:0.95</span></div><div><b>${p.images}</b><span>тестовых изображений</span></div></div>
     <p class="muted small">По классам (mAP@0.5): ${Object.entries(p.per_class || {}).map(([k, v]) => `${k} ${pct(v)}`).join(", ")}</p>`
     : `<p class="empty">Обучение идёт: модель YOLOv8s на открытом наборе jhboyo/ppe-dataset (лицензия MIT) — каска, голова без каски, жилет.</p>`;
+  const c = q.ppe_compare;
+  const LABEL = { ppe: "открытая (Hugging Face, YOLOv8)", ppe2: "наша (YOLOv8s, дообучена)" };
+  const CLS = { helmet: "каска", head: "голова без каски", vest: "жилет" };
+  $("#q-ppe-compare").innerHTML = c ? `<div class="table-wrap"><table><thead><tr><th>Модель</th><th class="num">mAP@0.5</th>
+    ${Object.keys(CLS).map((k) => `<th class="num">${CLS[k]}: AP · P · R</th>`).join("")}</tr></thead><tbody>
+    ${Object.entries(c.models).map(([n, m]) => `<tr><td>${esc(LABEL[n] || n)}</td><td class="num"><b>${pct(m.map50)}</b></td>
+      ${Object.keys(CLS).map((k) => `<td class="num">${pct(m[k].ap50)} · ${pct(m[k].precision)} · ${pct(m[k].recall)}</td>`).join("")}</tr>`).join("")}
+    </tbody></table></div>
+    <p class="muted small">${c.images} тестовых изображений, которых не было в обучении. P и R — при рабочем пороге модели (${Object.values(c.models)[0].conf}),
+    то есть то, что увидит правило «нет каски» / «нет жилета».</p>` : "";
 }
 
 /* ---------- разбор смены ---------- */

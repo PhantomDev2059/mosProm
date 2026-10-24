@@ -135,6 +135,16 @@ class EventManager:
             self.recent.remove(best)
         return best
 
+    def close_all(self) -> None:
+        """Конец записи или новый круг демо-файла: закрыть всё, забыть кандидатов и недавние события."""
+        for ev in self.active.values():
+            ev.closed_at = ev.last_signal
+            if self.on_close:
+                self.on_close(ev)
+        self.active.clear()
+        self.candidates.clear()
+        self.recent.clear()
+
     def tick(self, now: float, lost_for: Callable[[int], float]) -> None:
         """Раз в кадр: закрыть события без сигнала или с пропавшим треком, почистить старые кандидаты."""
         for key, ev in list(self.active.items()):

@@ -92,7 +92,7 @@ async def startup() -> None:
     if "webcam" not in processors:
         start_camera(parse_camera({
             "camera": "webcam", "title": "Вебкамера", "source": "webcam", "analysis_fps": 5,
-            "models": ["pose", "coco", "ppe", "cigarette", "fire"],
+            "models": ["pose", "coco", "ppe2", "cigarette", "fire"],
             "rules": [{"type": t} for t in ("fall", "immobile", "no_helmet", "phone", "smoking", "open_fire", "running")],
         }))
 
@@ -424,12 +424,14 @@ def quality():
             if r.get("quant_check"):
                 quant.setdefault(r["name"], {})[tag] = r["quant_check"] | {"preset": r.get("preset"),
                                                                             "smart": r.get("smart_calib"),
-                                                                            "finetune": r.get("finetune_epochs")}
+                                                                            "finetune": r.get("finetune_epochs"),
+                                                                            "images": r.get("calib_images")}
     ppe = None
     res = Path("/workspace/linq/train/ppe_v8s_test")
     if (res / "metrics.json").exists():
         ppe = load(res / "metrics.json")
-    return {"fall": sweep, "fall_ml": fall_ml, "quant": quant, "ppe": ppe}
+    return {"fall": sweep, "fall_ml": fall_ml, "quant": quant, "ppe": ppe,
+            "ppe_compare": load(DATA / "eval" / "ppe_compare.json")}
 
 
 @app.get("/api/bench")

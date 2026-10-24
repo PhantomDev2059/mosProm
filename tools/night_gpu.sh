@@ -54,6 +54,9 @@ import json
 p = "/workspace/linq/models/registry.json"; r = json.load(open(p))
 r["ppe2"] = {"kind": "detect", "path": "/workspace/linq/models/onnx/ppe2.onnx", "source": "ppe_v8s (jhboyo/ppe-dataset)",
              "names": {"0": "helmet", "1": "head", "2": "vest"}, "class_map": {"0": "helmet", "1": "head", "2": "vest"}, "conf": 0.45}
+# каски и головы теперь даёт ppe2 (на общем тесте mAP50 0,93 против 0,29 у открытой модели, eval/compare_ppe.py);
+# у открытой модели остаются классы, которых нет в ppe2: «без жилета», жилет, техника
+r["ppe"]["class_map"] = {k: v for k, v in r["ppe"]["class_map"].items() if v not in ("helmet", "no_helmet")}
 json.dump(r, open(p, "w"), ensure_ascii=False, indent=1)
 PY
   mark export

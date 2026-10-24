@@ -25,8 +25,12 @@ from engine.postprocess import letterbox  # noqa: E402
 HEAD_CONV = re.compile(r"^/model\.\d+/cv[234]\.\d+/cv[234]\.\d+\.2/Conv$")
 
 
-def head_outputs(model: onnx.ModelProto) -> list[str]:
-    outs = [n.output[0] for n in model.graph.node if n.op_type == "Conv" and HEAD_CONV.match(n.name)]
+def head_outputs(model: onnx.ModelProto, cls_on_cpu: bool = False) -> list[str]:
+    """Выходы последних свёрток головы. cls_on_cpu — у ветки классов (cv3) срез на входе последней свёртки 1×1:
+    логиты классов сильно смещены в минус, в int8 у порога уверенности теряется точность, а свёртка 1×1
+    на CPU почти ничего не стоит."""
+    outs = [n.input[0] if cls_on_cpu and "/cv3." in n.name else n.output[0]
+            for n in model.graph.node if n.op_type == "Conv" and HEAD_CONV.match(n.name)]
     if not outs:
         raise SystemExit("не нашёл последние свёртки головы YOLO; укажите --cut вручную (имена из Netron)")
     return outs
@@ -72,6 +76,13 @@ def smart_frames(onnx_path: str, videos: Path, count: int, size: int, conf: floa
     return pool[sorted(rich + plain)]
 
 
+def image_frames(folder: Path, count: int, size: int) -> np.ndarray:
+    """Случайные изображения обучающего набора — та область данных, на которой модель училась."""
+    files = sorted(folder.glob("*.jpg")) + sorted(folder.glob("*.png"))
+    pick = np.random.default_rng(1).choice(len(files), size=min(count, len(files)), replace=False)
+    return np.concatenate([letterbox(cv2.imread(str(files[i])), size)[0] for i in sorted(pick)], 0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--onnx", required=True)
@@ -83,6 +94,9 @@ def main() -> None:
     ap.add_argument("--cut", nargs="*", help="имена тензоров среза вместо автоматического поиска")
     ap.add_argument("--smart", action="store_true", help="калибровка с упором на кадры, где модель видит свои объекты")
     ap.add_argument("--finetune", type=int, default=0, help="эпох fine_tune_torch для порогов квантования")
+    ap.add_argument("--images", help="папка обучающих изображений: половина калибровки берётся из неё")
+    ap.add_argument("--percentile", type=float, default=99.9, help="перцентиль активаций для порогов")
+    ap.add_argument("--cls-on-cpu", action="store_true", help="последняя свёртка ветки классов — в хвосте на CPU")
     args = ap.parse_args()
 
     from tpu_framework import O1, O5, TPU_H1M, Network, QuantizedModel, RegularModel, TpuProgram, compiler
@@ -96,7 +110,8 @@ def main() -> None:
     model = onnx.load(args.onnx)
     input_name = model.graph.input[0].name
     output_name = model.graph.output[0].name
-    cut = args.cut or head_outputs(model)
+    cut = args.cut or head_outputs(model, args.cls_on_cpu)
+    report["cls_on_cpu"] = args.cls_on_cpu
     head = get_sub_model(model=model, ordered_input_names=[input_name], ordered_output_names=cut)
     tail = get_sub_model(model=model, ordered_input_names=cut, ordered_output_names=[output_name])
     onnx.save(tail, out / f"{args.name}_tail.onnx")
@@ -105,11 +120,17 @@ def main() -> None:
 
     head = preliminary_model_conditioning(head)
     size = head.graph.input[0].type.tensor_type.shape.dim[2].dim_value
-    calib = (smart_frames(args.onnx, Path(args.videos), args.calib, size) if args.smart
-             else calibration_frames(Path(args.videos), args.calib, size))
-    print(f"[2/4] калибровка на {len(calib)} кадрах камер{' (smart)' if args.smart else ''}", flush=True)
+    n_cam = args.calib // 2 if args.images else args.calib
+    calib = (smart_frames(args.onnx, Path(args.videos), n_cam, size) if args.smart
+             else calibration_frames(Path(args.videos), n_cam, size))
+    if args.images:
+        calib = np.concatenate([calib, image_frames(Path(args.images), args.calib - n_cam, size)], 0)
+        report["calib_images"] = args.calib - n_cam
+    print(f"[2/4] калибровка на {len(calib)} кадрах{' (smart)' if args.smart else ''}"
+          f"{f', из них {args.calib - n_cam} из обучающего набора' if args.images else ''}", flush=True)
     regular = RegularModel(model=head)
-    thresholds = regular.calibrate_torch(calibration_data={input_name: calib}, samplewise_percentile=99.9)
+    thresholds = regular.calibrate_torch(calibration_data={input_name: calib}, samplewise_percentile=args.percentile)
+    report["percentile"] = args.percentile
     if args.finetune:
         t_ft = time.time()
         thresholds = regular.fine_tune_torch(thresholds=thresholds, fine_tuning_data={input_name: calib},

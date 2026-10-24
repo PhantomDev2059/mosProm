@@ -90,7 +90,7 @@ def main() -> None:
         if backend == "cuda":
             import subprocess
             result["device"] = subprocess.run(["nvidia-smi", "--query-gpu=name,power.limit", "--format=csv,noheader"],
-                                              capture_output=True, text=True).stdout.strip()
+                                              capture_output=True, text=True).stdout.strip().splitlines()[0]   # замер идёт на первой карте
         for name in args.names:
             try:
                 run, head_only = make_runner(backend, name, models, Path(args.programs) if args.programs else None)

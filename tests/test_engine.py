@@ -51,6 +51,17 @@ def test_track_id_switch_is_merged():
     assert len(opened) == 1
 
 
+def test_new_pass_does_not_stretch_old_event():
+    """Демо-файл по кругу: событие прошлого прохода закрывается и не приклеивает к себе повтор через минуту."""
+    opened, closed = [], []
+    mgr = EventManager("cam", on_open=lambda e, d: opened.append(e), on_close=closed.append)
+    run_signal(mgr, [True] * (10 * FPS))
+    mgr.close_all()
+    assert len(closed) == 1 and closed[0].duration_s <= 10
+    run_signal(mgr, [True] * (10 * FPS))
+    assert len(opened) == 2 and opened[1] is not opened[0]
+
+
 def test_schedule_overnight():
     s = Schedule.parse("22:00-06:00")
     assert s.active(datetime(2026, 10, 23, 23, 30))

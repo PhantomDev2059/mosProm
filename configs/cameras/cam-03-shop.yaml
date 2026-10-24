@@ -2,7 +2,7 @@ camera: cam-03-shop
 title: Цех №2, проход между станками
 source: cam_shop.mp4
 analysis_fps: 5
-models: [pose, ppe]
+models: [pose, ppe2]
 # жилет в цехе не обязателен (чистые зоны, комбинезоны) — контролируем каску и бег
 rules:
   - {type: no_helmet}

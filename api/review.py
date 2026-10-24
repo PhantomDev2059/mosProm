@@ -29,14 +29,14 @@ PRE_S, POST_S, MAX_CLIP_S = 3.0, 2.0, 20.0
 PRESETS = {
     "universal": {
         "title": "Все нарушения",
-        "models": ["pose", "ppe", "coco", "forklift", "fire", "cigarette"],
+        "models": ["pose", "ppe2", "ppe", "coco", "forklift", "fire", "cigarette"],
         "rules": ["fall", "immobile", "no_helmet", "no_vest", "vehicle_proximity", "running", "phone", "smoking",
                   "open_fire", "smoke"],
     },
-    "site": {"title": "Стройплощадка", "models": ["pose", "ppe"], "rules": ["no_helmet", "no_vest", "fall", "immobile"]},
+    "site": {"title": "Стройплощадка", "models": ["pose", "ppe2", "ppe"], "rules": ["no_helmet", "no_vest", "fall", "immobile"]},
     "warehouse": {"title": "Склад", "models": ["pose", "ppe", "forklift"],
                   "rules": ["vehicle_proximity", "no_vest", "running", "fall", "immobile"]},
-    "shop": {"title": "Цех", "models": ["pose", "ppe", "coco"], "rules": ["no_helmet", "running", "phone", "fall", "immobile"]},
+    "shop": {"title": "Цех", "models": ["pose", "ppe2", "coco"], "rules": ["no_helmet", "running", "phone", "fall", "immobile"]},
     "outdoor": {"title": "Открытая площадка", "models": ["pose", "fire", "cigarette"], "rules": ["open_fire", "smoke", "smoking"]},
 }
 

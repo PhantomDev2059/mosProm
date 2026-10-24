@@ -29,7 +29,13 @@ class OnnxBackend:
             if hasattr(ort, "preload_dlls"):
                 ort.preload_dlls()           # CUDA и cuDNN из pip-пакетов nvidia-*, которые ставит torch
             providers.insert(0, "CUDAExecutionProvider")
-        self.session = ort.InferenceSession(path, providers=providers)
+        opts = ort.SessionOptions()
+        if providers[0].startswith("CUDA"):
+            # на GPU потоки CPU почти не нужны, а у каждой из десятков сессий (камеры × модели) свой пул,
+            # по умолчанию на все ядра и с активным ожиданием — они отнимают процессор у декодирования видео
+            opts.intra_op_num_threads = 2
+            opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        self.session = ort.InferenceSession(path, sess_options=opts, providers=providers)
         self.input_name = self.session.get_inputs()[0].name
         self.name = "onnx-" + ("cuda" if self.session.get_providers()[0].startswith("CUDA") else "cpu")
 
