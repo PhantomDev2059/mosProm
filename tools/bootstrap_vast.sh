@@ -110,7 +110,11 @@ EOF
 supervisorctl reread >/dev/null && supervisorctl update
 
 echo "== 5. SDK LinQ (Python 3.12.11) в фоне — нужен для компиляции .tpu"
-if [ ! -x $W/sdk/.venv/bin/python ]; then
+# адрес и ключ доступа к SDK — из материалов кейса, в репозиторий не кладём:
+#   export LINQ_SDK_URL=https://.../tpu_framework_2026.9.45.zip LINQ_SDK_SHARE=<ключ из инструкции LinQ>
+if [ ! -x $W/sdk/.venv/bin/python ] && [ -z "$LINQ_SDK_URL" ]; then
+  echo "   пропуск: задайте LINQ_SDK_URL и LINQ_SDK_SHARE"
+elif [ ! -x $W/sdk/.venv/bin/python ]; then
   nohup bash -c "
     mkdir -p $W/sdk && cd $W/sdk
     curl -s -u '$LINQ_SDK_SHARE:' -o fw.zip '$LINQ_SDK_URL' && unzip -q -o fw.zip
