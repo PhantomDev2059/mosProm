@@ -344,6 +344,7 @@
       '<span class="mono">' + hm(a.created) + '<br>→ ' + hm(a.resolved_at) + '</span></button>';
   }
   function viewAlarms(v) {
+    delete v.dataset.drawn;          // контейнер общий для вкладок: пометка от прошлого экрана не должна мешать отрисовке
     put(v, '<section class="sec">' + secH('01', 'Тревоги', '') + skel(2, 176) + '</section>');
     const draw = () => {
       const w = { esc: 0, open: 1, ack: 2 };
