@@ -23,6 +23,15 @@ function fmtDur(s) {
 }
 const sevPill = (s) => `<span class="pill ${esc(s)}">${esc(SEV[s] || s)}</span>`;
 const stPill = (s) => `<span class="pill st-${esc(s)}">${esc(ST[s] || s)}</span>`;
+/* номер камеры из ID: «cam-03-shop» → «К-03» — тот же, что на плитке мониторинга */
+function camNo(id) {
+  const m = /\d+/.exec(id || "");
+  if (m) return "К-" + m[0].padStart(2, "0");
+  const i = state.cameras.filter((c) => c.source !== "webcam").findIndex((c) => c.id === id);
+  return i < 0 ? "" : "К-" + String(i + 1).padStart(2, "0");
+}
+const camText = (id, title) => { const n = camNo(id); return n ? `${n} · ${title ?? ""}` : String(title ?? ""); };
+const camHTML = (id, title) => { const n = camNo(id); return (n ? `<b class="cno">${n}</b> · ` : "") + esc(title); };
 
 /* ---------- маршрутизация ---------- */
 const VIEWS = ["monitor", "review", "gallery", "journal", "analytics", "quality", "zones", "webcam", "linq"];
@@ -57,7 +66,7 @@ function beep() {
 function toast(ev) {
   const el = document.createElement("div");
   el.className = "toast";
-  el.innerHTML = `<b>${esc(ev.title)}</b><span class="muted small">${esc(ev.camera_title)} · ${esc(ev.zone_title)} · ${fmtTime(ev.started_at)}</span>`;
+  el.innerHTML = `<b>${esc(ev.title)}</b><span class="muted small">${camHTML(ev.camera, ev.camera_title)} · ${esc(ev.zone_title)} · ${fmtTime(ev.started_at)}</span>`;
   el.addEventListener("click", () => { openModal(ev.id); el.remove(); });
   $("#toasts").appendChild(el);
   setTimeout(() => el.remove(), 9000);
@@ -88,7 +97,7 @@ function feedItem(ev) {
     <img src="${esc(ev.snapshot)}?v=${Math.round(ev.duration_s)}" alt="" loading="lazy">
     <div><div class="row">${sevPill(ev.severity)}${stPill(ev.status)}</div>
     <div class="t">${esc(ev.title)}</div>
-    <div class="m">${esc(ev.camera_title)} · ${esc(ev.zone_title)}</div>
+    <div class="m">${camHTML(ev.camera, ev.camera_title)} · ${esc(ev.zone_title)}</div>
     <div class="m">${fmtTime(ev.started_at)} · ${ev.closed ? "длилось" : "длится"} ${fmtDur(ev.duration_s)}</div></div></li>`;
 }
 function renderFeeds() {
@@ -113,9 +122,9 @@ async function loadCameras() {
   const cams = state.cameras.filter((c) => c.source !== "webcam");
   const box = $("#cams");
   if (box.children.length !== cams.length) {
-    box.innerHTML = cams.map((c, i) => `<div class="cam" id="cam-${esc(c.id)}" data-cam="${esc(c.id)}" title="Нажмите, чтобы развернуть">
+    box.innerHTML = cams.map((c) => `<div class="cam" id="cam-${esc(c.id)}" data-cam="${esc(c.id)}" title="Нажмите, чтобы развернуть">
       <img data-frame="${esc(c.id)}" alt="Камера ${esc(c.title)}">
-      <div class="cam-top"><span class="cam-no">К-${String(i + 1).padStart(2, "0")}</span><b>${esc(c.title)}</b>
+      <div class="cam-top"><span class="cam-no">${esc(camNo(c.id))}</span><b>${esc(c.title)}</b>
         <span class="cam-rec"><i></i>REC <span data-clock></span></span></div>
       <div class="cam-bottom"><span data-act></span><span class="cam-fps mono" data-fps></span></div></div>`).join("");
   }
@@ -183,7 +192,7 @@ function renderCamAlarms() {
   btn.hidden = !last;
   if (last) {
     btn.dataset.id = last.id;
-    btn.innerHTML = `<span class="pill critical">последнее критичное</span><b>${esc(last.title)}</b><span class="muted">${esc(last.camera_title)} · ${fmtTime(last.started_at)}</span>`;
+    btn.innerHTML = `<span class="pill critical">последнее критичное</span><b>${esc(last.title)}</b><span class="muted">${camHTML(last.camera, last.camera_title)} · ${fmtTime(last.started_at)}</span>`;
   }
 }
 $("#sit-last").addEventListener("click", (e) => openModal(e.currentTarget.dataset.id));
@@ -193,49 +202,97 @@ setInterval(() => {
 }, 1000);
 
 /* ---------- фильтры галереи и журнала ---------- */
+const PERIODS = [["1", "час"], ["24", "сутки"], ["168", "неделя"], ["", "всё время"]];
 function filtersHTML(prefix) {
   const types = state.rules.map((r) => `<option value="${esc(r.type)}">${esc(r.title)}</option>`).join("");
-  const cams = state.cameras.map((c) => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+  const cams = state.cameras.map((c) => `<option value="${esc(c.id)}">${esc(camText(c.id, c.title))}</option>`).join("");
+  const journal = prefix === "journal";
+  const periods = PERIODS.map(([v, t]) => `<option value="${v}" ${v === "24" ? "selected" : ""}>${t}</option>`).join("")
+    + (journal ? `<option value="custom" hidden>свой интервал</option>` : "");
   return `<label>Нарушение <select id="${prefix}-type"><option value="">все</option>${types}</select></label>
     <label>Камера <select id="${prefix}-cam"><option value="">все</option>${cams}</select></label>
+    <label>Зона <select id="${prefix}-zone"><option value="">все</option></select></label>
     <label>Уровень <select id="${prefix}-sev"><option value="">все</option>${Object.entries(SEV).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
     <label>Статус <select id="${prefix}-st"><option value="">все</option>${Object.entries(ST).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
-    <label>Период <select id="${prefix}-h"><option value="1">час</option><option value="24" selected>сутки</option><option value="168">неделя</option><option value="">всё время</option></select></label>`;
+    <label>Период <select id="${prefix}-h">${periods}</select></label>
+    ${journal ? `<label>с <input type="datetime-local" id="journal-from"></label><label>по <input type="datetime-local" id="journal-to"></label>` : ""}`;
+}
+/* зоны выбранной камеры (или всех): из настроек камер и из уже загруженных событий — так видны и удалённые зоны */
+function fillZones(p) {
+  const sel = $(`#${p}-zone`), cam = $(`#${p}-cam`).value, cur = sel.value;
+  const zones = new Map();
+  const add = (camId, id, title) => {
+    if (!id || (cam && camId !== cam)) return;
+    const z = zones.get(id) || { title, cams: new Set() };
+    z.cams.add(camId); zones.set(id, z);
+  };
+  state.cameras.forEach((c) => (c.zones || []).forEach((z) => add(c.id, z.id, z.title)));
+  state.events.forEach((e) => add(e.camera, e.zone, e.zone_title));
+  const label = (z) => (cam ? z.title : z.cams.size > 1 ? `${z.title} · все камеры` : `${z.title} · ${camNo([...z.cams][0]) || [...z.cams][0]}`);
+  sel.innerHTML = `<option value="">все</option>` + [...zones].sort((a, b) => a[1].title.localeCompare(b[1].title, "ru"))
+    .map(([id, z]) => `<option value="${esc(id)}">${esc(label(z))}</option>`).join("");
+  sel.value = zones.has(cur) ? cur : "";
 }
 function setupFilters() {
   document.querySelectorAll("[data-filters]").forEach((bar) => {
     const p = bar.dataset.filters;
     const extra = bar.innerHTML;
     bar.innerHTML = filtersHTML(p) + extra;
-    bar.addEventListener("change", () => (p === "gallery" ? loadGallery() : loadJournal()));
+    fillZones(p);
+    bar.addEventListener("change", (e) => {
+      if (e.target.id === `${p}-cam`) fillZones(p);
+      if (e.target.type === "datetime-local") $(`#${p}-h`).value = "custom";     // правка дат — свой интервал
+      p === "gallery" ? loadGallery() : loadJournal();
+    });
   });
+}
+/* datetime-local хранит местное время без пояса: переводим сами, valueAsNumber считал бы его UTC */
+const toLocalInput = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+function journalRange() {
+  const h = $("#journal-h").value, from = $("#journal-from"), to = $("#journal-to");
+  if (h !== "custom") {                       // «последние N часов» скользят вместе со временем, поля показывают окно
+    const now = Date.now();
+    from.value = h ? toLocalInput(now - h * 3600e3) : "";
+    to.value = toLocalInput(now);
+    return { since: h ? Math.floor(now / 1000 - h * 3600) : 0 };
+  }
+  const r = { since: from.value ? new Date(from.value).getTime() / 1000 : 0 };
+  if (to.value) r.until = new Date(to.value).getTime() / 1000 + 59.999;          // до конца выбранной минуты
+  return r;
 }
 function query(p) {
   const q = new URLSearchParams();
-  [["type", "type"], ["camera", "cam"], ["severity", "sev"], ["status", "st"], ["hours", "h"]].forEach(([k, id]) => {
+  [["type", "type"], ["camera", "cam"], ["zone", "zone"], ["severity", "sev"], ["status", "st"], ...(p === "journal" ? [] : [["hours", "h"]])].forEach(([k, id]) => {
     const v = $(`#${p}-${id}`)?.value;
     if (v) q.set(k, v);
   });
+  if (p === "journal") Object.entries(journalRange()).forEach(([k, v]) => q.set(k, v));
   return q.toString();
 }
 async function loadGallery() {
   const rows = await api("/api/events?limit=240&" + query("gallery"));
   rows.forEach((r) => state.events.set(r.id, r));
+  fillZones("gallery");
   $("#gallery").innerHTML = rows.length ? rows.map((e) => `<article class="g-card" data-id="${esc(e.id)}">
     <div class="g-img"><img src="${esc(e.snapshot)}" alt="${esc(e.title)}" loading="lazy">${sevPill(e.severity)}<span class="dur">${fmtDur(e.duration_s)}</span></div>
-    <div class="g-body"><div class="t">${esc(e.title)}</div><div class="m">${esc(e.camera_title)} · ${esc(e.zone_title)}</div>
+    <div class="g-body"><div class="t">${esc(e.title)}</div><div class="m">${camHTML(e.camera, e.camera_title)} · ${esc(e.zone_title)}</div>
     <div class="m">${fmtTime(e.started_at, true)} ${stPill(e.status)}</div></div></article>`).join("")
     : `<div class="empty">Под фильтр ничего не попало. Расширьте период или снимите фильтры.</div>`;
 }
+const JOURNAL_LIMIT = 500;
+const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? few : many);
 async function loadJournal() {
-  const rows = await api("/api/events?limit=500&" + query("journal"));
+  const qs = query("journal");
+  const rows = await api(`/api/events?limit=${JOURNAL_LIMIT}&` + qs);
   rows.forEach((r) => state.events.set(r.id, r));
-  const h = $("#journal-h")?.value;
-  $("#csv-link").href = "/api/events.csv" + (h ? "?hours=" + h : "");
+  fillZones("journal");
+  // CSV — ровно те же фильтры и период, время в поясе браузера, без ограничения числа строк
+  $("#csv-link").href = "/api/events.csv?" + qs + "&tz=" + -new Date().getTimezoneOffset();
+  $("#journal-count").textContent = rows.length >= JOURNAL_LIMIT ? `показаны последние ${JOURNAL_LIMIT}, в CSV — все` : `${rows.length} ${plural(rows.length, "запись", "записи", "записей")}`;
   $("#journal").innerHTML = rows.map((e) => `<tr data-id="${esc(e.id)}"><td class="mono">${fmtTime(e.started_at, true)}</td>
-    <td>${esc(e.camera_title)}</td><td>${esc(e.zone_title)}</td><td>${esc(e.title)}</td><td>${sevPill(e.severity)}</td>
+    <td>${camHTML(e.camera, e.camera_title)}</td><td>${esc(e.zone_title)}</td><td>${esc(e.title)}</td><td>${sevPill(e.severity)}</td>
     <td class="num">${e.duration_s}</td><td class="num">${e.latency_s ?? "—"}</td><td>${stPill(e.status)}</td>
-    <td><img src="${esc(e.snapshot)}" alt="" loading="lazy"></td></tr>`).join("") || `<tr><td colspan="9" class="empty">Записей нет.</td></tr>`;
+    <td><img src="${esc(e.snapshot)}" alt="" loading="lazy"></td></tr>`).join("") || `<tr><td colspan="9" class="empty">Под фильтр ничего не попало.</td></tr>`;
 }
 
 /* ---------- аналитика ---------- */
@@ -256,7 +313,8 @@ async function loadAnalytics() {
     <div class="kpi"><b>${s.precision == null ? "—" : Math.round(s.precision * 100) + "%"}</b><span>точность по отметкам оператора</span></div>
     <div class="kpi"><b>${s.latency_p50 == null ? "—" : s.latency_p50.toFixed(1) + " с"}</b><span>медиана от начала нарушения до тревоги</span></div>`;
   bars($("#ch-type"), s.by_type);
-  bars($("#ch-cam"), s.by_camera, "var(--medium)");
+  const camId = Object.fromEntries(state.cameras.map((c) => [c.title, c.id]));
+  bars($("#ch-cam"), Object.fromEntries(Object.entries(s.by_camera).map(([t, v]) => [camText(camId[t], t), v])), "var(--medium)");
   bars($("#ch-status"), Object.fromEntries(Object.entries(s.by_status).map(([k, v]) => [ST[k] || k, v])), "var(--ok)");
   const days = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
   const max = Math.max(1, ...s.heat.flat());
@@ -306,7 +364,7 @@ function fillModal(ev) {
   $("#m-status").outerHTML = `<span class="pill st-${esc(ev.status)}" id="m-status">${esc(ST[ev.status] || ev.status)}</span>`;
   $("#m-title").textContent = ev.title;
   const det = Object.entries(ev.details || {}).map(([k, v]) => `${DETAIL[k] || k}: ${DETAIL[v] || v}`).join(", ");
-  $("#m-kv").innerHTML = `<dt>Камера</dt><dd>${esc(ev.camera_title)}</dd><dt>Зона</dt><dd>${esc(ev.zone_title)}</dd>
+  $("#m-kv").innerHTML = `<dt>Камера</dt><dd>${camHTML(ev.camera, ev.camera_title)}</dd><dt>Зона</dt><dd>${esc(ev.zone_title)}</dd>
     <dt>Начало</dt><dd>${fmtTime(ev.started_at, true)}</dd><dt>Длительность</dt><dd>${fmtDur(ev.duration_s)}${ev.closed ? "" : " · идёт"}</dd>
     <dt>Тревога через</dt><dd>${ev.latency_s ?? "—"} с после начала</dd><dt>Уверенность</dt><dd>${Math.round((ev.score || 0) * 100)}%</dd>
     ${det ? `<dt>Детали</dt><dd>${esc(det)}</dd>` : ""}<dt>ID</dt><dd class="mono">${esc(ev.id)} · трек #${ev.track_id}</dd>`;
@@ -333,7 +391,7 @@ async function loadZones() {
   state.cameras = await api("/api/cameras");
   const sel = $("#z-cam");
   const cur = sel.value;
-  sel.innerHTML = state.cameras.filter((c) => c.source !== "webcam").map((c) => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+  sel.innerHTML = state.cameras.filter((c) => c.source !== "webcam").map((c) => `<option value="${esc(c.id)}">${esc(camText(c.id, c.title))}</option>`).join("");
   if (cur) sel.value = cur;
   pickZoneCam();
 }
@@ -681,6 +739,7 @@ async function loadLinq() {
   $("#lq-models").innerHTML = m.models.map((d) => `<tr><td>${esc(d.model)}</td><td class="mono">${esc(d.backend)}</td>
     <td class="num">${ms(d.pre, "p50")}</td><td class="num">${ms(d.infer, "p50")}</td><td class="num">${ms(d.infer, "p95")}</td><td class="num">${ms(d.post, "p50")}</td></tr>`).join("");
   const b = await api("/api/bench");
+  calcBench(b);
   const names = [...new Set(Object.values(b).flatMap((x) => Object.keys(x.models || {})))];
   const cell = (plat, n) => {
     const m = b[plat]?.models?.[n];
@@ -704,8 +763,77 @@ async function loadLinq() {
     ${quantCells(p.quant_check)}
     <td class="mono small">${esc((p.program || "").split("/").pop())}</td></tr>`).join("")
     : `<tr><td colspan="12" class="empty">Компиляция идёт или ещё не запускалась.</td></tr>`;
-  $("#lq-cams").innerHTML = m.cameras.map((c) => `<tr><td>${esc(c.title)}</td><td class="num">${c.fps}</td><td class="num">${c.proc_p50 ?? "—"}</td><td class="num">${c.proc_p95 ?? "—"}</td><td class="num">${c.active}</td></tr>`).join("");
+  $("#lq-cams").innerHTML = m.cameras.map((c) => `<tr><td>${camHTML(c.camera, c.title)}</td><td class="num">${c.fps}</td><td class="num">${c.proc_p50 ?? "—"}</td><td class="num">${c.proc_p95 ?? "—"}</td><td class="num">${c.active}</td></tr>`).join("");
 }
+
+/* ---------- калькулятор LinQ: чистая арифметика по замерам linq/bench.py ---------- */
+const CALC = { bench: {} };
+const PLATFORMS = [["tpu", "LinQ TPU · H1M"], ["cuda", "GPU"], ["cpu", "CPU"]];
+const fmtN = (v, d = 0) => (v == null || !isFinite(v) ? "—" : v.toLocaleString("ru-RU", { maximumFractionDigits: d }));
+function calcBench(b) {
+  CALC.bench = b || {};
+  const tpu = Object.values(CALC.bench.tpu?.models || {}).some((m) => m && !m.error && m.p50_ms != null);
+  $("#calc-tpu-ms").disabled = tpu;
+  $("#calc-tpu-src").textContent = tpu ? `из замера на стенде, ${CALC.bench.tpu.at || ""}` : "оценка, ждём замера на стенде";
+  const dev = CALC.bench.cuda?.device;               // «NVIDIA GeForce RTX 3060, 170.00 W» из nvidia-smi
+  const w = dev && /([\d.]+)\s*W/i.exec(dev);
+  if (dev) $("#calc-gpu-name").textContent = dev.split(",")[0].replace("NVIDIA GeForce ", "") + ", лимит мощности";
+  if (w && !$("#calc-w-cuda").dataset.touched) $("#calc-w-cuda").value = Math.round(+w[1]);
+  renderCalc();
+}
+/* кадр камеры = выбранные модели одна за другой: складываем их p50 */
+function frameMs(plat, models) {
+  const meas = CALC.bench[plat]?.models || {};
+  const p50 = (n) => (meas[n] && !meas[n].error && meas[n].p50_ms != null ? meas[n].p50_ms : null);
+  const known = Object.keys(meas).map(p50).filter((v) => v != null);
+  if (!known.length) {
+    if (plat !== "tpu") return null;
+    const v = +$("#calc-tpu-ms").value;
+    return v > 0 ? { ms: v * models.length, src: "оценка, ждём замера на стенде", est: true, guess: true } : null;
+  }
+  const worst = Math.max(...known), missing = models.filter((n) => p50(n) == null);
+  return {
+    ms: models.reduce((sum, n) => sum + (p50(n) ?? worst), 0), est: missing.length > 0,
+    src: `замер ${CALC.bench[plat].at || ""}` + (missing.length ? ` · без замера: ${missing.join(", ")}` : ""),
+  };
+}
+function renderCalc() {
+  const cams = Math.max(1, Math.round(+$("#calc-cams").value || 1));
+  const fps = Math.max(0.1, +$("#calc-fps").value || 5);
+  const models = [...document.querySelectorAll("#calc-models input:checked")].map((c) => c.value);
+  const need = cams * fps * models.length;
+  $("#calc-th-n").textContent = `${cams} камер`;
+  const res = PLATFORMS.map(([plat, name]) => {
+    const r = models.length ? frameMs(plat, models) : null;
+    if (!r) return { plat, name };
+    const devFps = 1000 / r.ms;                                  // кадров/с через все модели на одном устройстве
+    const perDev = Math.floor(devFps / fps);
+    const devices = (n) => (perDev >= 1 ? Math.ceil(n / perDev) : n * Math.ceil(fps / devFps));
+    const watts = +$(`#calc-w-${plat}`).value || null;
+    return { plat, name, ...r, devFps, perDev, devices, watts };
+  });
+  const tpu = res[0];
+  $("#calc-kpi").innerHTML = `<div><b>${fmtN(need)}</b><span>инференсов/с нужно: ${cams} камер × ${fmtN(fps, 1)} к/с × ${models.length} моделей</span></div>
+    <div><b>${tpu.devices ? fmtN(tpu.perDev) : "—"}${tpu.est ? "*" : ""}</b><span>камер тянет одно устройство LinQ</span></div>
+    <div><b>${tpu.devices ? fmtN(tpu.devices(cams)) : "—"}${tpu.est ? "*" : ""}</b><span>устройств LinQ на ${cams} камер</span></div>`;
+  $("#calc-rows").innerHTML = res.map((r) => {
+    if (!r.devices) return `<tr><td>${esc(r.name)}</td><td colspan="9" class="muted">${models.length ? "нет замера на этой платформе" : "выберите хотя бы одну модель"}</td></tr>`;
+    const star = r.est ? "*" : "";
+    return `<tr><td>${esc(r.name)}</td><td class="num">${fmtN(r.ms, 1)}${star}</td><td class="num">${fmtN(r.devFps, 1)}</td>
+      <td class="num">${fmtN(r.devFps * models.length)}</td><td class="num"><b>${r.perDev >= 1 ? fmtN(r.perDev) : "< 1"}</b></td>
+      <td class="num">${fmtN(r.devices(5))}</td><td class="num"><b>${fmtN(r.devices(cams))}</b></td><td class="num">${fmtN(r.devices(100))}</td>
+      <td class="num">${r.watts ? fmtN(r.devices(cams) * r.watts / cams, 1) : "—"}</td><td class="small muted">${esc(r.src)}</td></tr>`;
+  }).join("");
+  $("#calc-note").textContent = [
+    tpu.guess ? "Задержка LinQ TPU — наше предположение, а не замер: стенд ещё не подключён, поле можно поправить." : "",
+    res.some((r) => r.est && !r.guess) ? "* — для моделей без замера на платформе взята самая медленная из замеренных." : "",
+    "Как считаем: модели одной камеры выполняются по очереди, без батчей и параллельных потоков; задержка — p50 одного кадра 640×640 (для LinQ — вместе с хвостом модели на CPU).",
+    "Это осторожная оценка: параллельные потоки дают больше (столбец «к/с» в таблице выше), а декодирование видео, пре- и постобработка здесь не учтены — закладывайте запас 20–30%.",
+    "Ватты — паспортные значения, не замер; мощность LinQ H1M уточнить у LinQ.",
+  ].filter(Boolean).join(" ");
+}
+$("#calc").addEventListener("input", (e) => { if (e.target.id === "calc-w-cuda") e.target.dataset.touched = "1"; renderCalc(); });
+renderCalc();
 
 /* ---------- старт ---------- */
 (async function init() {

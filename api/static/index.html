@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Sans+Extra+Condensed:wght@600;700;800&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=7">
+<link rel="stylesheet" href="/static/style.css?v=8">
 </head>
 <body>
 <header class="top">
@@ -115,7 +115,7 @@
 
   <!-- ЖУРНАЛ -->
   <section class="view" id="view-journal" hidden>
-    <div class="toolbar" data-filters="journal"><a class="btn" id="csv-link" href="/api/events.csv">Экспорт CSV</a></div>
+    <div class="toolbar" data-filters="journal"><a class="btn" id="csv-link" href="/api/events.csv">Экспорт CSV</a><span class="muted small" id="journal-count"></span></div>
     <div class="table-wrap"><table class="journal">
       <thead><tr><th>Время</th><th>Камера</th><th>Зона</th><th>Нарушение</th><th>Уровень</th><th class="num">Длит., с</th><th class="num">До тревоги, с</th><th>Статус</th><th>Кадр</th></tr></thead>
       <tbody id="journal"></tbody>
@@ -223,6 +223,33 @@
         <tbody id="lq-bench"></tbody></table></div>
         <p class="muted small" id="lq-bench-note"></p>
       </div>
+      <div class="card wide calc" id="calc">
+        <h3>Калькулятор: сколько устройств нужно на объект</h3>
+        <div class="calc-in">
+          <label>Камер на объекте<input type="number" id="calc-cams" min="1" step="1" value="20"></label>
+          <label>Кадров/с анализа на камеру<input type="number" id="calc-fps" min="0.5" step="0.5" value="5"></label>
+          <fieldset class="calc-models" id="calc-models"><legend>Модели на каждой камере</legend>
+            <label><input type="checkbox" value="pose" checked>pose · поза</label>
+            <label><input type="checkbox" value="ppe2" checked>ppe2 · каски</label>
+            <label><input type="checkbox" value="ppe">ppe · жилеты</label>
+            <label><input type="checkbox" value="coco">coco · телефон</label>
+            <label><input type="checkbox" value="forklift">forklift · погрузчик</label>
+            <label><input type="checkbox" value="fire" checked>fire · огонь, дым</label>
+            <label><input type="checkbox" value="cigarette">cigarette · сигарета</label>
+          </fieldset>
+        </div>
+        <div class="calc-in">
+          <label>LinQ TPU, мс на модель <span class="calc-note" id="calc-tpu-src">оценка, ждём замера на стенде</span><input type="number" id="calc-tpu-ms" min="0.1" step="0.5" value="10"></label>
+          <label>LinQ H1M, Вт <span class="calc-note">уточнить у LinQ</span><input type="number" id="calc-w-tpu" min="0" step="1" placeholder="—"></label>
+          <label>GPU, Вт <span class="calc-note" id="calc-gpu-name">RTX 3060, паспортная мощность</span><input type="number" id="calc-w-cuda" min="0" step="1" value="170"></label>
+          <label>CPU, Вт <span class="calc-note">TDP процессора</span><input type="number" id="calc-w-cpu" min="0" step="1" value="65"></label>
+        </div>
+        <div class="q-num" id="calc-kpi"></div>
+        <div class="table-wrap"><table><thead><tr><th>Платформа</th><th class="num">Кадр всеми моделями, мс</th><th class="num">Кадров/с на устройство</th>
+          <th class="num">Инференсов/с</th><th class="num">Камер на устройство</th><th class="num">Устройств: 5 камер</th><th class="num" id="calc-th-n">Ваши камеры</th>
+          <th class="num">100 камер</th><th class="num">Вт на камеру</th><th>Откуда задержка</th></tr></thead><tbody id="calc-rows"></tbody></table></div>
+        <p class="muted small" id="calc-note"></p>
+      </div>
       <div class="card wide">
         <h3>Камеры: темп обработки</h3>
         <div class="table-wrap"><table><thead><tr><th>Камера</th><th class="num">Кадров/с</th><th class="num">Кадр p50, мс</th><th class="num">Кадр p95, мс</th><th class="num">Активных</th></tr></thead><tbody id="lq-cams"></tbody></table></div>
@@ -264,6 +291,6 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/app.js?v=12"></script>
+<script src="/static/app.js?v=13"></script>
 </body>
 </html>

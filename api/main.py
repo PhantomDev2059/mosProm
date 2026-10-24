@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 import yaml
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -21,6 +21,8 @@ from engine.config import CONFIRM_DEFAULT, SEVERITY_DEFAULT, load_cameras, parse
 from engine.rules import RULES
 
 from .notify import Notifier
+from .people import PeopleIndex
+from .tg_routes import install as install_shift
 from .review import PRESETS, ReviewManager
 from .store import STATUSES, EventStore
 from .workers import SourceProcessor, VideoWorker, load_detectors
@@ -34,6 +36,21 @@ MEDIA.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="LinQ Guard")
 store = EventStore(DATA / "events.db")
+people = PeopleIndex(DATA / "people.db", MEDIA, MODELS)      # опознание нарушителей по лицу (YuNet + SFace)
+
+# Через публичный HTTPS-туннель (мини-апп Telegram) наружу видны только мини-апп, его API, кадры и снимки;
+# дашборд, журнал, зоны и разбор смены — только через SSH-туннель.
+PUBLIC_PATHS = ("/app/", "/api/tg/", "/media/")
+
+
+@app.middleware("http")
+async def public_guard(request: Request, call_next):
+    if request.headers.get("cf-connecting-ip") or request.headers.get("host", "").endswith(".trycloudflare.com"):
+        path = request.url.path
+        frame = path.startswith("/api/cameras/") and path.endswith("/frame.jpg")
+        if not (path == "/app" or path.startswith(PUBLIC_PATHS) or frame):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return await call_next(request)
 
 
 class Hub:
@@ -72,11 +89,14 @@ def _resolve(source: str) -> str:
     return str(DATA / "videos" / source)
 
 
-notifier = Notifier(MEDIA)
+# смена, роли, тревоги и бот Telegram с мини-аппом (api/shift.py, api/telegram.py, api/tg_routes.py);
+# каждое новое событие уходит и в прежний канал оповещений, и в сервис смены
+shift = install_shift(app, store, people, MEDIA, DATA, ROOT / "configs" / "roles.yaml")
+notifier = shift.chain(Notifier(MEDIA))
 
 
 def start_camera(cfg) -> None:
-    proc = SourceProcessor(cfg, _models_for(cfg), store, MEDIA, hub.publish, notifier)
+    proc = SourceProcessor(cfg, _models_for(cfg), store, MEDIA, hub.publish, notifier, people)
     processors[cfg.id] = proc
     if cfg.source != "webcam":
         w = VideoWorker(proc, _resolve(cfg.source))
@@ -186,11 +206,19 @@ def rules():
 
 
 # ---------- события ----------
+def _window(since: float | None, until: float | None, hours: float | None) -> tuple[float | None, float | None]:
+    """Период журнала: явные границы since/until (секунды Unix) важнее «последних N часов»."""
+    if since is None and hours:
+        since = time.time() - hours * 3600
+    return since, until
+
+
 @app.get("/api/events")
-def events(type: str | None = None, camera: str | None = None, severity: str | None = None,
-           status: str | None = None, hours: float | None = None, limit: int = 300):
-    since = time.time() - hours * 3600 if hours else None
-    return store.query(type, camera, severity, status, since, None, limit)
+def events(type: str | None = None, camera: str | None = None, zone: str | None = None, severity: str | None = None,
+           status: str | None = None, hours: float | None = None, since: float | None = None,
+           until: float | None = None, limit: int = 300):
+    since, until = _window(since, until, hours)
+    return store.query(type, camera, severity, status, since, until, limit, zone=zone)
 
 
 class StatusIn(BaseModel):
@@ -210,21 +238,29 @@ def set_status(eid: str, body: StatusIn):
 
 
 @app.get("/api/events.csv")
-def events_csv(hours: float = 24 * 7):
-    rows = store.query(since=time.time() - hours * 3600, limit=100000)
+def events_csv(type: str | None = None, camera: str | None = None, zone: str | None = None,
+               severity: str | None = None, status: str | None = None, hours: float | None = None,
+               since: float | None = None, until: float | None = None, tz: int | None = None):
+    """Те же фильтры, что у журнала; без периода — последняя неделя, как раньше.
+    tz — смещение часового пояса браузера в минутах, чтобы время в файле совпало с журналом на экране."""
+    if since is None and until is None and hours is None:
+        hours = 24 * 7
+    since, until = _window(since, until, hours)
+    rows = store.query(type, camera, severity, status, since, until, 100000, zone=zone)
+    stamp = (lambda t: time.gmtime(t + tz * 60)) if tz is not None else time.localtime
     buf = io.StringIO()
     w = csv.writer(buf, delimiter=";")
     w.writerow(["id", "время", "камера", "зона", "нарушение", "уровень", "длительность, с", "статус", "кадр"])
     for r in rows:
-        w.writerow([r["id"], time.strftime("%d.%m.%Y %H:%M:%S", time.localtime(r["started_at"])), r["camera_title"],
+        w.writerow([r["id"], time.strftime("%d.%m.%Y %H:%M:%S", stamp(r["started_at"])), r["camera_title"],
                     r["zone_title"], r["title"], r["severity"], r["duration_s"], r["status"], r["snapshot"]])
     return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=journal.csv"})
 
 
 @app.get("/api/stats")
-def stats(hours: float = 24 * 7):
-    return store.stats(time.time() - hours * 3600)
+def stats(hours: float = 24 * 7, since: float | None = None, until: float | None = None):
+    return store.stats(*_window(since, until, hours))
 
 
 RECOMMEND = {
@@ -511,8 +547,61 @@ async def ws_webcam(ws: WebSocket):
         pass
 
 
+# ---------- лайв-режим: загруженная запись идёт как живая камера ----------
+LIVE_RULES = ("fall", "immobile", "no_helmet", "no_vest", "vehicle_proximity", "running", "phone", "smoking",
+              "open_fire", "smoke")
+live: dict[str, dict] = {}
+
+
+def _live_user(request: Request) -> dict:
+    """Загружать запись может начальник смены или руководитель (проверка — через сервис смены)."""
+    user = shift.user_from_request(request) if shift is not None else None
+    if user is None or user.get("role") not in ("supervisor", "director"):
+        raise HTTPException(403, "запись загружает начальник смены или руководитель")
+    return user
+
+
+@app.post("/api/tg/live/upload")
+async def live_upload(request: Request, name: str):
+    """Запись с камеры — сырым потоком (?name=файл.mp4): воспроизводится в реальном времени как живая камера,
+    тревоги уходят в бот так же, как с настоящих камер."""
+    _live_user(request)
+    safe = "".join(c for c in Path(name).stem if c.isalnum() or c in "-_ ").strip()[:40] or "запись"
+    n = len(live) + 1
+    cid = f"live-{int(time.time())}"
+    path = DATA / "uploads" / f"{cid}.mp4"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as f:
+        async for chunk in request.stream():
+            f.write(chunk)
+    cap = cv2.VideoCapture(str(path))
+    ok = cap.isOpened() and cap.read()[0]
+    cap.release()
+    if not ok:
+        path.unlink(missing_ok=True)
+        raise HTTPException(400, "не похоже на видеофайл")
+    title = f"Лайв {n}: {safe}"
+    cfg = parse_camera({"camera": cid, "title": title, "source": str(path), "analysis_fps": 5, "loop": False,
+                        "models": ["pose", "ppe2", "ppe", "forklift", "fire", "cigarette", "coco"],
+                        "rules": [{"type": t} for t in LIVE_RULES]})
+    start_camera(cfg)
+    live[cid] = {"camera_id": cid, "title": title, "started": time.time()}
+    return {"camera_id": cid, "title": title}
+
+
+@app.get("/api/tg/live")
+def live_list():
+    out = []
+    for cid, info in sorted(live.items(), key=lambda kv: -kv[1]["started"]):
+        w = workers.get(cid)
+        progress = round(w.position / w.duration, 3) if w and w.duration else 0.0
+        out.append(info | {"status": "done" if (w is None or w.finished) else "playing", "progress": min(progress, 1.0)})
+    return out
+
+
 app.mount("/media", StaticFiles(directory=MEDIA), name="media")
 app.mount("/static", StaticFiles(directory=ROOT / "api" / "static"), name="static")
+app.mount("/app", StaticFiles(directory=ROOT / "api" / "static" / "tg", html=True, check_dir=False), name="tg")
 
 
 @app.get("/")
