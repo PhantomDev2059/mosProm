@@ -33,11 +33,13 @@ REPLAY_TOL_S = 6.0     # видеофайл по кругу: нарушение 
 def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Detector]:
     """backend="tpu" — программы .tpu на ускорителе LinQ (стенд), иначе ONNX Runtime на GPU/CPU."""
     reg = json.loads(registry_path.read_text())
-    tpu_dir = registry_path.parent / "tpu"
     out = {}
     for name, m in reg.items():
         spec = ModelSpec(name=name, kind=m["kind"], path=m["path"], conf=m.get("conf", 0.4),
                          class_map={int(k): v for k, v in m["class_map"].items()})
+        # tpu_v2 — улучшенное квантование (калибровка с объектами + дообучение порогов), где оно есть
+        tpu_dir = next((d for d in (registry_path.parent / "tpu_v2", registry_path.parent / "tpu")
+                        if any(d.glob(f"{name}_b1_*_h1m.tpu"))), registry_path.parent / "tpu")
         programs = sorted(tpu_dir.glob(f"{name}_b1_*_h1m.tpu"))
         if backend == "tpu" and programs:
             be = LinqTpuBackend(str(programs[0]), str(tpu_dir / f"{name}_tail.onnx"))

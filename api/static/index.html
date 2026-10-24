@@ -231,7 +231,7 @@
         <h3>Программы для ускорителя LinQ (SDK tpu_framework 2026.9.45, платформа H1M)</h3>
         <div class="table-wrap"><table><thead><tr><th>Модель</th><th class="num">Узлов на TPU</th><th class="num">Узлов в хвосте CPU</th><th class="num">Кадров калибровки</th><th>Пресет</th><th class="num">Размер, МБ</th><th class="num">Компиляция, с</th><th class="num">Находит то же, что FP32</th><th class="num">Лишних</th><th class="num">IoU рамок</th><th class="num">Сдвиг точек, % роста</th><th>Файл</th></tr></thead>
         <tbody id="lq-programs"></tbody></table></div>
-        <p class="muted small">TPU считает свёрточную часть сети до последних свёрток головы YOLO; хвост (DFL, декодирование рамок и точек) и NMS выполняет CPU тем же кодом, что и здесь. Калибровка квантования — на кадрах наших камер.</p>
+        <p class="muted small">TPU считает свёрточную часть сети до последних свёрток головы YOLO; хвост (DFL, декодирование рамок и точек) и NMS выполняет CPU тем же кодом, что и здесь. Калибровка квантования — на кадрах наших камер; v2 — половина кадров с объектами модели и дообучение порогов (fine_tune_torch), у нашей модели касок ещё и снимки из её обучающего набора. На стенд идёт лучшая версия каждой модели. Наша YOLOv8s пока теряет после квантования почти половину объектов исходной модели — разбираемся, на каких слоях.</p>
       </div>
     </div>
   </section>
@@ -264,6 +264,6 @@
 </div>
 
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=12"></script>
 </body>
 </html>

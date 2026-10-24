@@ -393,15 +393,16 @@ def _hms(s: float) -> str:
 
 @app.get("/api/linq")
 def linq_programs():
-    """Отчёты компиляции моделей в программы .tpu (linq/compile_tpu.py)."""
+    """Отчёты компиляции моделей в программы .tpu (linq/compile_tpu.py) — та версия, что пойдёт на стенд."""
     import json as _json
-    out = []
-    for p in sorted((MODELS / "tpu").glob("*_report.json")):
-        try:
-            out.append(_json.loads(p.read_text()))
-        except ValueError:
-            continue
-    return out
+    out = {}
+    for folder, tag in ((MODELS / "tpu", "v1"), (MODELS / "tpu_v2", "v2")):     # v2, где есть, заменяет v1
+        for p in sorted(folder.glob("*_report.json")):
+            try:
+                out[p.name] = _json.loads(p.read_text()) | {"version": tag}
+            except ValueError:
+                continue
+    return list(out.values())
 
 
 @app.get("/api/quality")

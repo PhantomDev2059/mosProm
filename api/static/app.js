@@ -697,7 +697,7 @@ async function loadLinq() {
     "Задержка — p50 одного кадра; кадров/с — лучшая пропускная способность при 1–4 параллельных потоках. GPU и CPU мерились на том же сервере, что обслуживает живые камеры, — цифры немного занижены.",
   ].filter(Boolean).join(" · ");
   const progs = await api("/api/linq");
-  $("#lq-programs").innerHTML = progs.length ? progs.map((p) => `<tr><td>${esc(p.name)}</td><td class="num">${p.head_nodes ?? "—"}</td>
+  $("#lq-programs").innerHTML = progs.length ? progs.map((p) => `<tr><td>${esc(p.name)} <span class="muted small">${esc(p.version || "")}</span></td><td class="num">${p.head_nodes ?? "—"}</td>
     <td class="num">${p.tail_nodes ?? "—"}</td><td class="num">${p.calib_frames ?? "—"}</td>
     <td>${p.preset ? `<span class="pill ok">${esc(p.preset.toUpperCase())}</span>` : `<span class="pill high">не собрано</span>`}</td>
     <td class="num">${p.program_mb ?? "—"}</td><td class="num">${p.compile_s ?? "—"}</td>
