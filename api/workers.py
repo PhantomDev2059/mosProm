@@ -45,7 +45,8 @@ def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Dete
         tpu_dir = next((d for d in (registry_path.parent / "tpu_v2", registry_path.parent / "tpu")
                         if any(d.glob(f"{name}_b1_*_h1m.tpu"))), registry_path.parent / "tpu")
         programs = sorted(tpu_dir.glob(f"{name}_b1_*_h1m.tpu"))
-        if backend == "tpu" and programs:
+        # LINQ_CPU_MODELS — модели, которые считаем в FP32 на CPU даже в режиме tpu (квантование их портит)
+        if backend == "tpu" and programs and name not in os.environ.get("LINQ_CPU_MODELS", "").split(","):
             # /dev/tpu* — ускоритель в машине; на стенде хакатона его нет, там облачный воркер через RabbitMQ
             cls = LinqTpuBackend if list(Path("/dev").glob("tpu*")) else LinqCloudBackend
             be = cls(str(programs[0]), str(tpu_dir / f"{name}_tail.onnx"))
