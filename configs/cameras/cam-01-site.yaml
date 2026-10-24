@@ -1,5 +1,5 @@
 camera: cam-01-site
-title: Стройплощадка, корпус А
+title: Цех металлоконструкций, участок резки
 source: cam_site.mp4
 analysis_fps: 5
 models: [pose, ppe2, ppe]

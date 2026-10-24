@@ -1,5 +1,5 @@
 camera: cam-06-fire
-title: Открытая площадка, сварочный пост
+title: Промплощадка, участок огневых работ
 source: cam_fire.mp4
 analysis_fps: 5
 models: [fire, pose]

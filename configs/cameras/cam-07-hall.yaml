@@ -1,5 +1,5 @@
 camera: cam-07-hall
-title: Проходная, турникеты
+title: Склад готовой продукции, проход
 source: cam_hall.mp4
 analysis_fps: 5
 models: [pose, coco]
