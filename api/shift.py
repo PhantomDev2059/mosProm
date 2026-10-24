@@ -726,7 +726,7 @@ class ShiftService:
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=";")
         w.writerow(["создана", "камера", "зона", "нарушение", "уровень", "источник", "принял", "принята",
-                    "до «Принял», мин", "устранил", "устранена", "до «Устранено», мин", "эскалация руководителю",
+                    "до «Принял», мин", "устранил", "устранена", "до «Устранено», мин", "передано руководителю",
                     "отчёт", f"в норматив {self.escalate_min:g} мин"])
         for a in sorted(alarms, key=lambda a: a["created"]):
             src = "авто" if a["source"] == "auto" else f"передал {a['source_by'] or ''}".strip() + (
@@ -765,8 +765,8 @@ class ShiftService:
                  f"Тревог <b>{sla['alarms']}</b> · принято <b>{sla['acked']}</b> · устранено <b>{sla['resolved']}</b>",
                  f"Медиана: до «Принял» <code>{fmt_dur(sla['median_ack_s'])}</code> · "
                  f"до «Устранено» <code>{fmt_dur(sla['median_resolve_s'])}</code>",
-                 f"✅ В норматив: <b>{sla['on_time']} из {decided}</b>{share} · ❗ эскалаций: {sla['escalated']}"
-                 f" · ⌛ просрочено: {sla['overdue']}"]
+                 f"✅ В срок: <b>{sla['on_time']} из {decided}</b>{share} · 📨 передано руководителю: "
+                 f"{sla['escalated']} · ⌛ не закрыто в срок: {sla['overdue']}"]
         for x in sla["by_who"][:4]:
             lines.append(f"👤 {esc(x['who'])} — {x['alarms']}"
                          + (f", <code>{fmt_dur(x['median_resolve_s'])}</code>" if x["median_resolve_s"] is not None else "")

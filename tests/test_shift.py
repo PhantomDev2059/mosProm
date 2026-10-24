@@ -415,7 +415,7 @@ def test_sla_and_alarms_csv(svc):
     who = {x["who"]: x for x in sla["by_who"]}
     assert who["Петров"]["on_time_share"] == 1 and who["Сидоров"]["on_time_share"] == 0
     assert who["никто не принял"]["alarms"] == 2
-    assert "В норматив: <b>1 из 4</b> (25%)" in svc.summary_text(svc.summary(), sla=True)
+    assert "В срок: <b>1 из 4</b> (25%)" in svc.summary_text(svc.summary(), sla=True)
     rows = svc.csv_alarms_shift().decode("utf-8-sig").splitlines()
     assert rows[0].endswith("в норматив 2 мин") and len(rows) == 5
     assert rows[1].split(";")[-1] == "да" and rows[2].split(";")[-1] == "нет" and "К-01 · Цех 1" in rows[1]

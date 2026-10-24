@@ -28,8 +28,8 @@
   const ROLE_D = {
     worker: 'Мои нарушения за смену и сводка: кто и где нарушал',
     operator: 'Смотрит все камеры: живая лента и передача нарушения начальнику смены',
-    supervisor: 'Тревоги с таймером эскалации, живая лента, люди, камеры и отчёт',
-    director: 'KPI смены, время реакции, эскалации и настройки',
+    supervisor: 'Тревоги со сроком устранения, живая лента, люди, камеры и отчёт',
+    director: 'Показатели смены, время реакции, тревоги не закрытые в срок',
   };
   const ROLE_ORDER = ['worker', 'operator', 'supervisor', 'director'];
   const AL_ST = { open: 'тревога открыта', ack: 'тревога принята', resolved: 'тревога устранена' };
@@ -299,7 +299,7 @@
   // ------------------------------------------------------------ alarms (supervisor, director)
   function timer(a) {
     return '<div class="timer" data-dl="' + a.deadline + '" data-c="' + a.created + '"><svg viewBox="0 0 26 26"><circle class="bg" cx="13" cy="13" r="10"/>' +
-      '<circle class="fg" cx="13" cy="13" r="10" stroke-dasharray="62.83" stroke-dashoffset="0"/></svg><span>до эскалации руководителю<br><b>--:--</b></span></div>';
+      '<circle class="fg" cx="13" cy="13" r="10" stroke-dasharray="62.83" stroke-dashoffset="0"/></svg><span>осталось до срока<br><b>--:--</b></span></div>';
   }
   function tickTimers() {
     $$('[data-since]').forEach((el) => { el.textContent = mmss(now() - +el.dataset.since); });
@@ -307,7 +307,7 @@
       const dl = +el.dataset.dl, c = +el.dataset.c, left = dl - now(), frac = clamp(left / Math.max(1, dl - c), 0, 1);
       const fg = $('.fg', el);
       if (fg) fg.setAttribute('stroke-dashoffset', (62.83 * (1 - frac)).toFixed(2));
-      if (left <= 0) { if (!el.classList.contains('late')) { el.classList.add('late'); $('span', el).innerHTML = 'время вышло<br><b>эскалация…</b>'; } }
+      if (left <= 0) { if (!el.classList.contains('late')) { el.classList.add('late'); $('span', el).innerHTML = 'срок прошёл<br><b>руководитель уведомлён</b>'; } }
       else { const b = $('b', el); if (b) b.textContent = mmss(left); }
     });
   }
@@ -328,7 +328,7 @@
     const fl = S.flash && S.flash.id === String(a.event_id) && Date.now() < S.flash.until;
     return '<article class="card crop alarm' + (ack ? ' ack' : '') + (escd ? ' esc' : '') + (fl ? ' flash' : '') + '" id="al-' + id + '">' +
       '<button class="shot" type="button" data-act="snap" data-id="' + id + '">' + img(a.snapshot) + '<span class="rec">' + hm(a.created) + '</span><span class="tag">' + esc(camShort(a)) + '</span></button>' +
-      '<div class="alarm-b"><div class="row-top">' + sev(a.severity || 'critical') + (overdue(a) ? '<span class="ast late">просрочено</span>' : '') + '<span class="mono since" data-since="' + a.created + '"></span></div>' +
+      '<div class="alarm-b"><div class="row-top">' + sev(a.severity || 'critical') + (overdue(a) ? '<span class="ast late">срок прошёл</span>' : '') + '<span class="mono since" data-since="' + a.created + '"></span></div>' +
       '<h3>' + esc(a.title) + '</h3><div class="where">' + esc([camLabel(a), zoneOf(a)].filter(Boolean).join(' · ')) + '</div>' +
       (a.person ? '<div class="who">Сотрудник: <b>' + esc(a.person.name) + '</b></div>' : '') + srcLine(a) +
       (escd ? '' : timer(a)) + '<div class="status-line">' + st + '</div>' + btns + ask + '</div></article>';
@@ -344,9 +344,9 @@
       const w = { esc: 0, open: 1, ack: 2 };
       const open = S.alarms.filter((a) => a.status !== 'resolved').sort((a, b) => (a.escalated_at ? w.esc : w[a.status] || 1) - (b.escalated_at ? w.esc : w[b.status] || 1) || b.created - a.created);
       const done = S.alarms.filter((a) => a.status === 'resolved');
-      let h = '<section class="sec">' + secH('01', 'Тревоги', 'эскалация через ' + fmtMin(S.me.escalate_min));
+      let h = '<section class="sec">' + secH('01', 'Тревоги', 'срок устранения ' + fmtMin(S.me.escalate_min));
       if (!isBoss()) h += '<p class="note" style="margin:-4px 0 14px">Только просмотр: принимает и закрывает тревоги начальник смены.</p>';
-      h += open.length ? open.map(alarmCard).join('') : empty('ok', 'Открытых тревог нет', 'Критичные нарушения появятся здесь сразу — с таймером до эскалации руководителю.');
+      h += open.length ? open.map(alarmCard).join('') : empty('ok', 'Открытых тревог нет', 'Критичные нарушения появятся здесь сразу — со сроком устранения.');
       if (done.length) h += '<details class="resolved"' + (S.resOpen ? ' open' : '') + '><summary>Устранено за смену · ' + done.length + '</summary>' + done.map(resRow).join('') + '</details>';
       put(v, h + '</section>');
       v.dataset.drawn = '1';
@@ -368,7 +368,7 @@
   }
   async function doAck(id, btn) {
     busy(btn, true);
-    try { mergeAlarm(await api('/api/tg/alarms/' + encodeURIComponent(id) + '/ack', { method: 'POST' })); hap.ok(); toast('Принято. Таймер эскалации идёт, пока тревога не устранена', 'ok'); }
+    try { mergeAlarm(await api('/api/tg/alarms/' + encodeURIComponent(id) + '/ack', { method: 'POST' })); hap.ok(); toast('Принято. Когда закончите — «Устранено»', 'ok'); }
     catch (e) { busy(btn, false); fail(e); }
   }
   function openResolve(id) {
@@ -402,7 +402,7 @@
       '<dt>Устранил</dt><dd>' + (a.resolved_at ? esc(a.resolved_by || '—') + ' · ' + hm(a.resolved_at) + ' <span class="note">(' + dur(a.resolved_at - a.created) + ')</span>' : '—') + '</dd>' +
       (a.note ? '<dt>Что сделано</dt><dd>' + esc(a.note) + '</dd>' : '') +
       (a.source === 'operator' ? '<dt>Передал</dt><dd>' + esc(a.source_by || 'оператор') + (a.comment ? ' · «' + esc(a.comment) + '»' : '') + '</dd>' : '') +
-      (a.escalated_at ? '<dt>Эскалация</dt><dd style="color:var(--crit)">' + hm(a.escalated_at) + '</dd>' : '') + '</dl>');
+      (a.escalated_at ? '<dt>Передано руководителю</dt><dd style="color:var(--crit)">' + hm(a.escalated_at) + '</dd>' : '') + '</dl>');
   }
   function focusAlarm() {
     if (!S.focus || !S.alarmSig) return;
@@ -503,11 +503,11 @@
       if (S.seenAlarms && a && a.event_id) S.seenAlarms.add(a.event_id);
       hap.ok();
       openSheet('<div class="kicker" style="color:var(--fg-3)">тревога создана</div><h3>Передано</h3>' +
-        '<p class="note">Начальник смены получил тревогу в мини-приложении и в чате. Таймер эскалации пошёл.</p>' +
+        '<p class="note">Начальник смены получил тревогу в мини-приложении и в чате. Срок устранения пошёл.</p>' +
         (a && a.event_id ? '<div class="card crop" style="padding:12px;margin-top:12px"><div class="row-top">' + sev(a.severity || (e && e.severity) || 'critical') +
           '<span class="ast ' + esc(a.status || 'open') + '">' + (AL_ST[a.status] || AL_ST.open) + '</span></div><h4 style="margin:8px 0 4px;font:700 18px/1.1 var(--f-disp);text-transform:uppercase">' + esc(a.title || (e && e.title) || '') + '</h4>' +
           '<div class="note">' + esc(camLabel(a.camera_label || a.camera_no || a.camera_title ? a : e || {})) + ' · ' + hm(a.created) + '</div>' + srcLine(a) +
-          (a.deadline ? '<div class="note" style="margin-top:6px">Эскалация руководителю в ' + hm(a.deadline) + ', если не устранят</div>' : '') + '</div>' : '') +
+          (a.deadline ? '<div class="note" style="margin-top:6px">Необходимо устранить до ' + hm(a.deadline) + '</div>' : '') + '</div>' : '') +
         '<div class="btn-col" style="margin-top:14px"><button class="btn ghost wide" type="button" data-act="close">Готово</button></div>');
       if (S.refresh) S.refresh();
       loadAlarms().catch(() => {});
@@ -671,8 +671,8 @@
       '<div><div class="v">' + tdur(sla.median_resolve_s) + '</div><div class="l">медиана до «Устранено»</div></div>' +
       '<div class="' + (sh != null && sh < 0.8 ? 'hot' : 'good') + '"><div class="v">' + pct + '</div><div class="l">в норматив ' + fmtMin(sla.limit_min) + '</div></div></div>' +
       '<div class="norm"><i style="width:' + (sh == null ? 0 : Math.round(sh * 100)) + '%"></i><b title="цель 80%"></b></div>' +
-      '<div class="sla-meta">тревог <b>' + (sla.alarms || 0) + '</b> · принято <b>' + (sla.acked || 0) + '</b> · устранено <b>' + (sla.resolved || 0) + '</b> · эскалаций <b' + (sla.escalated ? ' class="w"' : '') + '>' + (sla.escalated || 0) +
-      '</b> · просрочено <b' + (sla.overdue ? ' class="c"' : '') + '>' + (sla.overdue || 0) + '</b></div>' +
+      '<div class="sla-meta">тревог <b>' + (sla.alarms || 0) + '</b> · принято <b>' + (sla.acked || 0) + '</b> · устранено <b>' + (sla.resolved || 0) + '</b> · передано руководителю <b' + (sla.escalated ? ' class="w"' : '') + '>' + (sla.escalated || 0) +
+      '</b> · не закрыто в срок <b' + (sla.overdue ? ' class="c"' : '') + '>' + (sla.overdue || 0) + '</b></div>' +
       (who.length ? '<table class="who"><thead><tr><th>Кто</th><th>«Принял»</th><th>«Устр.»</th><th>норм.</th><th>проср.</th></tr></thead><tbody>' +
         who.map((w) => '<tr><td><b>' + esc(shortName(w.who)) + '</b><small>' + (w.alarms || 0) + ' трев. · устр. ' + (w.resolved || 0) + '</small></td><td>' + tcell(w.median_ack_s) + '</td><td>' + tcell(w.median_resolve_s) +
           '</td><td' + (w.on_time_share != null && w.on_time_share < 0.8 ? ' class="c"' : '') + '>' + (w.on_time_share == null ? '—' : Math.round(w.on_time_share * 100) + '%') + '</td><td' + (w.overdue ? ' class="c"' : '') + '>' + (w.overdue || 0) + '</td></tr>').join('') +
@@ -771,15 +771,15 @@
       const kpi = (val, label, cls) => '<div class="card crop kpi' + (cls ? ' ' + cls : '') + '"><div class="v">' + val + '</div><div class="l">' + label + '</div></div>';
       let h = '<section class="sec">' + secH('01', 'Обзор смены', esc((shiftObj() || {}).id || '')) + '<div class="kpis">' +
         kpi(t.violations || 0, 'нарушений за смену') + kpi(t.critical || 0, 'из них критичных', t.critical ? 'hot' : '') +
-        kpi(open.length, 'тревог открыто', open.length ? 'hot' : '') + kpi(sla.escalated != null ? sla.escalated : escd.length, 'эскалаций', escd.length ? 'warn' : '') + '</div></section>';
+        kpi(open.length, 'тревог открыто', open.length ? 'hot' : '') + kpi(sla.escalated != null ? sla.escalated : escd.length, 'передано руководителю', escd.length ? 'warn' : '') + '</div></section>';
       h += '<section class="sec">' + secH('02', 'Время реакции', 'норматив ' + fmtMin(sla.limit_min)) + slaBlock(sla, false) + '</section>';
       const hot = escd.filter((a) => a.status !== 'resolved');
-      h += '<section class="sec">' + secH('03', 'Эскалации', hot.length ? hot.length + ' не устранено' : '') +
+      h += '<section class="sec">' + secH('03', 'Не закрыто в срок', hot.length ? hot.length + ' в работе' : '') +
         (hot.length ? hot.map((a) => '<div class="card esc-card"><button type="button" data-act="snap" data-id="' + esc(a.event_id) + '">' + shot(a.snapshot) + '</button><div>' +
-          '<h4>' + esc(a.title) + '</h4><div class="note">' + esc(camLabel(a)) + ' · с ' + hm(a.created) + ' · эскалация ' + hm(a.escalated_at) + '</div>' +
+          '<h4>' + esc(a.title) + '</h4><div class="note">' + esc(camLabel(a)) + ' · с ' + hm(a.created) + ' · руководителю ' + hm(a.escalated_at) + '</div>' +
           '<div class="note">' + (a.status === 'ack' ? 'Принял ' + esc(a.ack_by || '') + ', но не устранил' : 'Никто не принял') + '</div>' + srcLine(a) +
           (a.asked_at ? '<div class="status-line" style="margin-top:6px">Отчёт запрошен в ' + hm(a.asked_at) + '</div>' : '<button class="btn signal sm" type="button" data-act="ask" data-id="' + esc(a.event_id) + '">Запросить отчёт</button>') +
-          '</div></div>').join('') : empty('ok', 'Эскалаций нет', 'Все критичные тревоги закрыты вовремя.')) + '</section>';
+          '</div></div>').join('') : empty('ok', 'Всё закрыто в срок', 'Критичные тревоги закрыты вовремя.')) + '</section>';
       h += '<section class="sec">' + secH('04', 'Что и где', '') + '<div class="card crop" style="padding:14px"><div class="note" style="margin-bottom:8px">По типам</div>' + bars(S.shift.by_type || [], 'title') +
         '<div class="note" style="margin:14px 0 8px">По камерам</div>' + bars(S.shift.by_camera || [], camLabel) + '</div>' +
         '<div class="btn-row" style="margin-top:16px"><button class="btn ghost sm" type="button" data-act="goto" data-v="alarms">Тревоги</button><button class="btn ghost sm" type="button" data-act="goto" data-v="report">Отчёт</button></div></section>';
@@ -798,10 +798,10 @@
       const m = s && s.escalate_min != null ? s.escalate_min : S.me.escalate_min;
       const bot = S.me.bot || {};
       put(v, '<section class="sec">' + secH('06', 'Настройки', '') +
-        '<div class="card crop set"><h4>Эскалация тревог</h4><p class="note">Если критичную тревогу не устранили за это время, она уходит руководителю.</p>' +
+        '<div class="card crop set"><h4>Срок устранения тревог</h4><p class="note">Если критичную тревогу не закрыли за это время, руководитель получит уведомление.</p>' +
         '<div class="stepper"><button type="button" data-act="step" data-v="-1" aria-label="меньше">−</button><input id="escMin" type="number" inputmode="decimal" min="0.5" max="1440" step="0.5" value="' + esc(m) + '"><button type="button" data-act="step" data-v="1" aria-label="больше">+</button></div>' +
         '<div class="hint">для показа поставьте 1–2 мин ↑</div><button class="btn wide" type="button" data-act="save-settings" style="margin-top:12px">Сохранить</button></div>' +
-        '<div class="card crop set"><h4>Telegram-бот</h4><div class="kv-list">' + (bot.enabled ? 'Подключён: <b>@' + esc(bot.username || '') + '</b><br>Тревоги, эскалации и отчёты приходят в чат.' : 'Не подключён — уведомления и «CSV в чат» недоступны.') + '</div>' +
+        '<div class="card crop set"><h4>Telegram-бот</h4><div class="kv-list">' + (bot.enabled ? 'Подключён: <b>@' + esc(bot.username || '') + '</b><br>Тревоги и отчёты приходят в чат.' : 'Не подключён — уведомления и «CSV в чат» недоступны.') + '</div>' +
         (bot.enabled && bot.username ? '<button class="btn ghost sm" type="button" data-act="open-bot" style="margin-top:10px">Открыть бота</button>' : '') + '</div>' +
         (S.me.demo ? '<div class="card crop set"><h4>Демо-режим</h4><p class="note">Роль: <b>' + ROLE[S.role] + '</b>. В рабочем режиме роли назначает администратор.</p><div class="btn-row">' +
           '<button class="btn ghost sm" type="button" data-act="roles">' + ic('swap') + 'Сменить роль</button>' +
@@ -826,7 +826,7 @@
       const s = await api('/api/tg/settings', { body: { escalate_min: val } });
       S.me.escalate_min = (s && s.escalate_min) || val;
       hap.ok();
-      toast('Эскалация через ' + fmtMin(S.me.escalate_min), 'ok');
+      toast('Срок устранения: ' + fmtMin(S.me.escalate_min), 'ok');
       loadAlarms().catch(() => {});
     } catch (e) { fail(e); }
     busy(btn, false);

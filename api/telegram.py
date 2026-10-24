@@ -1,4 +1,4 @@
-"""Telegram-бот смены поверх Bot API (httpx, long polling): тревоги начальникам, эскалация руководителю, отчёты.
+"""Telegram-бот смены поверх Bot API (httpx, long polling): тревоги начальникам, уведомление руководителя, если тревогу не закрыли в срок, отчёты.
 
 Токен — LINQ_TG_BOT_TOKEN или файл <LINQ_SECRETS>/tg_bot_token (по умолчанию /workspace/linq/secrets).
 Публичный HTTPS-адрес мини-приложения — LINQ_PUBLIC_URL или файл <LINQ_SECRETS>/public_url; перечитывается
@@ -39,11 +39,11 @@ ROLE_CMDS = {None: ("start", "help"),
              "director": ("start", "alarms", "shift", "report", "clear", "help")}
 
 BOT_NAME = "LinQ Guard · контроль ТБ"
-BOT_SHORT = "Нарушения охраны труда с камер: тревога начальнику смены сразу, руководителю — если не устранили в срок."
+BOT_SHORT = "Нарушения охраны труда с камер: тревога начальнику смены сразу, руководителю — если её не закрыли в срок."
 BOT_ABOUT = ("LinQ Guard следит за охраной труда по камерам: падения, огонь и дым, каски и жилеты, опасные зоны, "
              "транспорт рядом с людьми.\n\n"
              "🦺 Начальник смены получает критичные тревоги сразу и отмечает «Принял» и «Устранено».\n"
-             "💼 Руководитель — тревоги, не устранённые в срок, и отчёты смен.\n"
+             "💼 Руководитель — тревоги, не закрытые в срок, и отчёты смен.\n"
              "🖥 Оператор видит всю ленту и передаёт нарушения начальнику.\n"
              "👷 Рабочий — свои нарушения в конце смены.\n\n"
              "Приватность: лица не связываются с именами, профиль привязывает сам сотрудник.")
@@ -367,9 +367,9 @@ class TelegramBot:
                          + (f" · «{esc(a['comment'])}»" if a.get("comment") else ""))
         if a["status"] == "ack":
             lines.append(f"👀 Принял <b>{esc(a['ack_by'])}</b> · <code>{hm(a['ack_at'])}</code>")
-            lines.append(f"⏳ Устранить до <code>{hm(a['deadline'])}</code>")
+            lines.append(f"⏳ Необходимо устранить до <code>{hm(a['deadline'])}</code>")
         else:
-            lines.append(f"⏳ Устранить до <code>{hm(a['deadline'])}</code> — иначе уйдёт руководителю")
+            lines.append(f"⏳ Необходимо устранить до <code>{hm(a['deadline'])}</code>")
         return "\n".join(lines)
 
     def send_alarm(self, chats: list[int], a: dict, readonly: bool = False) -> int:
@@ -378,10 +378,12 @@ class TelegramBot:
 
     @staticmethod
     def escalation_text(a: dict, responsible: str, minutes: int) -> str:
-        return "\n".join([f"❗ <b>Не устранено за {minutes} мин · {esc(a['title'])}</b>",
+        return "\n".join([f"⚠️ <b>Требует внимания · {esc(a['title'])}</b>",
                           f"📍 {TelegramBot.place(a)}",
-                          f"🕐 Тревога с <code>{hm(a['created'])}</code>",
-                          f"👤 Ответственный: {esc(responsible)}"])
+                          f"🕐 Тревога в <code>{hm(a['created'])}</code> · срок устранения "
+                          f"<code>{hm(a['deadline'])}</code> прошёл ({minutes} мин)",
+                          f"👤 Начальник смены: {esc(responsible)}",
+                          "Можно попросить у начальника смены короткий отчёт о ходе работ."])
 
     def send_escalation(self, chats: list[int], a: dict, responsible: str, minutes: int) -> int:
         buttons = [[{"text": "📋 Запросить отчёт", "callback_data": f"ask:{a['event_id']}"}],
@@ -390,10 +392,11 @@ class TelegramBot:
 
     def send_ask(self, chats: list[int], a: dict, who: str) -> int:
         """Запрос отчёта от руководителя — служебное сообщение, уходит из чата, когда тревогу устранят."""
-        text = "\n".join(["📋 <b>Руководитель запрашивает отчёт</b>",
-                          f"👤 {esc(who)} ждёт короткий отчёт по тревоге",
+        text = "\n".join(["📋 <b>Руководитель просит отчёт</b>",
+                          f"👤 {esc(who)} просит коротко сообщить, как идут работы",
                           f"⚠️ {esc(a['title'])} · {self.place(a)}",
-                          f"🕐 С <code>{hm(a['created'])}</code> · нажмите «Устранено», когда закончите"])
+                          f"🕐 Тревога в <code>{hm(a['created'])}</code> · когда закончите, нажмите «Устранено» "
+                          "и опишите, что сделано"])
         buttons = [[{"text": "🛠 Устранено", "callback_data": f"res:{a['event_id']}"}],
                    self.app_button(frag=f"#alarm={a['event_id']}")]
         return sum(self.send_text(c, text, [b for b in buttons if b], kind="aux", event_id=a["event_id"]) for c in chats)
@@ -448,8 +451,10 @@ class TelegramBot:
             "operator": ["🔔 Критичные тревоги приходят сюда для сведения.",
                          "📣 Любое нарушение из ленты можно передать начальнику смены в приложении."],
             "supervisor": ["🔔 Критичные тревоги приходят сюда сразу: «Принял», затем «Устранено» с коротким отчётом.",
-                           f"⏳ Не устранено за {lim} — тревога уходит руководителю. Открытые — /alarms"],
-            "director": [f"🔔 Сюда приходят тревоги, не устранённые за {lim}; можно запросить отчёт у начальника смены.",
+                           f"⏳ Срок устранения — {lim}. Если тревога не закрыта в срок, руководитель получит "
+                           "уведомление. Открытые тревоги — /alarms"],
+            "director": [f"🔔 Сюда приходят тревоги, не закрытые в срок ({lim}), — по каждой можно попросить "
+                         "отчёт у начальника смены. Когда тревогу закроют, сообщение обновится.",
                          "📊 Сводка и реакция на тревоги — /shift, отчёт с файлами — /report"],
         }.get(role, [])
         if choose:
@@ -477,7 +482,7 @@ class TelegramBot:
         lines.append({"worker": "📋 Личный отчёт приходит в конце смены.",
                       "operator": "🔔 Критичные тревоги приходят сами; передать нарушение — в приложении.",
                       "supervisor": "🔔 Тревоги приходят сами; кнопки под карточкой — «Принял» и «Устранено».",
-                      "director": "🔔 Сюда приходят просроченные тревоги и отчёты смен."}.get(u["role"],
+                      "director": "🔔 Сюда приходят тревоги, не закрытые в срок, и отчёты смен."}.get(u["role"],
                                                                                           "Начните с /start."))
         return "\n".join(lines)
 
@@ -501,7 +506,7 @@ class TelegramBot:
         for i, a in enumerate(alarms[:8], 1):
             icon = LEVELS.get(a["severity"], ("🚨",))[0]
             state = f"👀 {esc(a['ack_by'])}" if a["status"] == "ack" else "ждёт «Принял»"
-            late = " · ❗ просрочена" if self.svc.clock() > a["deadline"] else ""
+            late = " · ⌛ срок прошёл" if self.svc.clock() > a["deadline"] else ""
             lines.append(f"{i}. {icon} <b>{esc(a['title'])}</b> · {self.place(a)}\n"
                          f"    🕐 <code>{hm(a['created'])}</code> · ⏳ до <code>{hm(a['deadline'])}</code> · {state}{late}")
             if u["role"] in BOSSES:

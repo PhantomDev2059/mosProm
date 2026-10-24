@@ -595,13 +595,13 @@ def _alarm_card(snapshot_path: Path, a: dict) -> bytes:
         if a.get("created") and a.get("resolved_at"):
             sh.text(M + k + 18, yb, "· за " + _dur(float(a["resolved_at"]) - float(a["created"])), "mono", 26, 500, PAL["pale"])
     elif deadline is not None:
-        lab = "СРОК ИСТЁК В" if overdue else "УСТРАНИТЬ ДО"
+        lab = "СРОК ПРОШЁЛ В" if overdue else "НЕОБХОДИМО УСТРАНИТЬ ДО"
         k = sh.text(M, yb, lab, "disp", 40, 700, PAL["chalk"], track=1.2)
         k += 14 + sh.text(M + k + 14, yb + 2, _hms(deadline, "%H:%M"), "disp", 58, 800,
                           PAL["crit"] if overdue else PAL["med"])
         if a.get("created"):
             mins = max(1, round((float(deadline) - float(a["created"])) / 60))
-            sh.text(M + k + 18, yb, f"· норматив {mins} мин", "mono", 26, 500, PAL["pale"])
+            sh.text(M + k + 18, yb, f"· срок {mins} мин", "mono", 26, 500, PAL["pale"])
     # подпись системы справа
     wm = "LINQ GUARD"
     ww = sh.text(W - M, yb - 8, wm, "disp", 30, 800, PAL["chalk"], anchor="rs", track=3)
@@ -779,12 +779,12 @@ def _shift_card(s: dict):
         lim = sla.get("limit_min")
         sh.text(cx, cy + r + 32, "В СРОК", "mono", 16, 700, PAL["pale"], anchor="ms", track=1.5)
         if lim:
-            sh.text(cx, cy + r + 54, f"норматив {lim} мин", "mono", 15, 500, PAL["dim"], anchor="ms")
+            sh.text(cx, cy + r + 54, f"срок {lim} мин", "mono", 15, 500, PAL["dim"], anchor="ms")
         esc, over = int(sla.get("escalated") or 0), int(sla.get("overdue") or 0)
         items = [("принято за", _dur(sla.get("median_ack_s")), PAL["chalk"]),
                  ("устранено за", _dur(sla.get("median_resolve_s")), PAL["chalk"]),
-                 ("эскалаций", str(esc), PAL["high"] if esc else PAL["chalk"]),
-                 ("просрочено", str(over), PAL["crit"] if over else PAL["chalk"])]
+                 ("руководителю", str(esc), PAL["high"] if esc else PAL["chalk"]),
+                 ("не в срок", str(over), PAL["crit"] if over else PAL["chalk"])]
         sx = x0 + 182
         for i, (k, v, col) in enumerate(items):
             y = by0 + 76 + i * 56
