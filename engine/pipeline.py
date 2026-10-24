@@ -1,4 +1,5 @@
 """Конвейер одной камеры: детекторы → трекер → правила по зонам → менеджер событий."""
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,7 +15,7 @@ from .tracking import IouTracker
 from .types import PERSON, Detection, Track
 
 ZONE_TRACK = 0          # «трек» для событий уровня зоны: огонь, дым
-_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="infer")
+_POOL = ThreadPoolExecutor(max_workers=int(os.environ.get("LINQ_INFER_WORKERS", "8")), thread_name_prefix="infer")
 
 
 @dataclass

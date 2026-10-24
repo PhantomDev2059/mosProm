@@ -33,6 +33,28 @@ MEDIA = DATA / "media"
 MEDIA.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="LinQ Guard")
+
+# За прокси Jupyter (стенд хакатона) сайт живёт под префиксом /user/<логин>/proxy/8000, а фронтенд
+# и API используют абсолютные пути. LINQ_BASE — этот префикс: дописываем его в HTML/JS/JSON-ответы.
+_BASE = os.environ.get("LINQ_BASE", "").rstrip("/")
+if _BASE:
+    import re as _re
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.responses import Response as _Resp
+    _PATHS = _re.compile(rb"([\"'`(=])/(api|ws|static|media|clips|snapshots|data|files)/")
+
+    class _Prefix(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            resp = await call_next(request)
+            ctype = resp.headers.get("content-type", "")
+            if not any(t in ctype for t in ("html", "javascript", "json", "css")):
+                return resp
+            body = b"".join([chunk async for chunk in resp.body_iterator])
+            body = _PATHS.sub(lambda m: m.group(1) + _BASE.encode() + b"/" + m.group(2) + b"/", body)
+            headers = {k: v for k, v in resp.headers.items() if k.lower() != "content-length"}
+            return _Resp(body, status_code=resp.status_code, headers=headers, media_type=None)
+
+    app.add_middleware(_Prefix)
 store = EventStore(DATA / "events.db")
 
 

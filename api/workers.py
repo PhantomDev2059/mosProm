@@ -12,7 +12,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from engine.backends import LinqTpuBackend, OnnxBackend
+from engine.backends import LinqCloudBackend, LinqTpuBackend, OnnxBackend
 from engine.config import CameraConfig
 from engine.detector import Detector, ModelSpec
 from engine.events import Event, EventManager
@@ -42,7 +42,9 @@ def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Dete
                         if any(d.glob(f"{name}_b1_*_h1m.tpu"))), registry_path.parent / "tpu")
         programs = sorted(tpu_dir.glob(f"{name}_b1_*_h1m.tpu"))
         if backend == "tpu" and programs:
-            be = LinqTpuBackend(str(programs[0]), str(tpu_dir / f"{name}_tail.onnx"))
+            # /dev/tpu* — ускоритель в машине; на стенде хакатона его нет, там облачный воркер через RabbitMQ
+            cls = LinqTpuBackend if list(Path("/dev").glob("tpu*")) else LinqCloudBackend
+            be = cls(str(programs[0]), str(tpu_dir / f"{name}_tail.onnx"))
         else:
             be = OnnxBackend(spec.path)
         out[name] = Detector(spec, be)

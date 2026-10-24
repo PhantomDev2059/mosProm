@@ -4,7 +4,7 @@
 # Падения — UR Fall Detection Dataset (настоящие падения с разметкой; на стоках падений на производстве нет).
 #   bash tools/factory_videos.sh            # на сервере, после bootstrap_vast.sh
 set -e
-V=/workspace/linq/data/videos
+V=${LINQ_DATA:-/workspace/linq/data}/videos
 cd $V
 mkdir -p raw parts
 UA="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
