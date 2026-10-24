@@ -49,7 +49,9 @@ if _BASE:
         async def dispatch(self, request, call_next):
             resp = await call_next(request)
             ctype = resp.headers.get("content-type", "")
-            if not any(t in ctype for t in ("html", "javascript", "json", "css")):
+            # через туннель Cloudflare (мини-апп) сайт открыт с корня — префикс прокси Jupyter там не нужен
+            via_tunnel = request.headers.get("cf-connecting-ip") or request.headers.get("host", "").endswith(".trycloudflare.com")
+            if via_tunnel or not any(t in ctype for t in ("html", "javascript", "json", "css")):
                 return resp
             body = b"".join([chunk async for chunk in resp.body_iterator])
             body = _PATHS.sub(lambda m: m.group(1) + _BASE.encode() + b"/" + m.group(2) + b"/", body)
