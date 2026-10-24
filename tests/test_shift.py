@@ -432,7 +432,7 @@ def test_operator_role_and_readonly_cards(svc, tmp_path):
     svc.on_event_opened(event(svc, "e1"))
     out = flush()
     by_chat = {p["chat_id"]: p for _, p in out}
-    assert by_chat[10]["reply_markup"]["inline_keyboard"] and by_chat[30]["reply_markup"] == {"inline_keyboard": []}
+    assert by_chat[10]["reply_markup"]["inline_keyboard"] and by_chat[30]["reply_markup"] == {"inline_keyboard": [[{"text": "▶️ Видео", "callback_data": "clip:e1"}]]}
     assert "К-01 · Цех 1" in by_chat[30]["text"]
     svc.ack("e1", "Мастер")
     edits = {p["chat_id"]: p for m, p in flush() if m == "editMessageText"}
