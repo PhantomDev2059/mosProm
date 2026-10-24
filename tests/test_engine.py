@@ -144,3 +144,57 @@ def test_proximity_needs_visible_feet_and_sane_vehicle_box():
     assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, huge], (720, 1280))) is None
     assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, near], (720, 1280))) is not None
     assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, near], (540, 960))) is None   # рамка у нижнего края
+
+
+def test_fire_check_rejects_lamp_and_vest():
+    from engine.rules import RuleContext, build_rule
+    from engine.rules.objects import flame_colors
+    from engine.scene import Scene, Zone
+    from engine.types import Track
+    rule = build_rule("open_fire", {})
+    zone = Zone("frame", "Весь кадр", None)
+    scene = Scene("c", [zone])
+    frame = np.zeros((720, 1280, 3), np.uint8)
+    frame[100:200, 100:200] = (255, 255, 255)                 # лампа: белое пятно
+    frame[100:200, 600:700] = (0, 120, 255)                   # пламя: насыщенный оранжевый
+    lamp = Detection(np.array([100, 100, 200, 200], np.float32), 0.8, "fire")
+    flame = Detection(np.array([600, 100, 700, 200], np.float32), 0.8, "fire")
+    for d in (lamp, flame):
+        d.attrs.update(flame_colors(frame, d.box))
+    ctx = RuleContext(scene, zone, 0, [], (720, 1280))
+    assert rule.evaluate(Track(1, "fire", lamp, 0, 0), ctx) is None
+    assert rule.evaluate(Track(2, "fire", flame, 0, 0), ctx) is not None
+    worker = Track(3, "person", person(560, 60, 180, 500), 0, 0)   # тот же оранжевый — на корпусе человека
+    vest = Detection(np.array([600, 200, 700, 300], np.float32), 0.8, "fire", attrs={"flame": 0.6, "white": 0.0})
+    assert rule.evaluate(Track(4, "fire", vest, 0, 0), RuleContext(scene, zone, 0, [worker], (720, 1280))) is None
+    spray = Detection(np.array([700, 400, 1100, 460], np.float32), 0.8, "fire")       # сноп искр: полоса 400×60
+    frame[400:460, 700:1100] = 0
+    for x in range(700, 1100, 9):
+        frame[425 + (x % 7):430 + (x % 7), x:x + 5] = (0, 140, 255)                      # мелкие оранжевые штрихи
+    spray.attrs.update(flame_colors(frame, spray.box))
+    assert rule.evaluate(Track(5, "fire", spray, 0, 0), ctx) is None
+
+
+def test_sitting_is_not_a_fall():
+    """Резко сел: голова опустилась, рамка стала широкой, но корпус вертикальный — не падение."""
+    from engine.rules import RuleContext, build_rule
+    from engine.scene import Scene, Zone
+    from engine.types import Track
+    rule = build_rule("fall", {})
+    zone = Zone("frame", "Весь кадр", None)
+    scene = Scene("c", [zone])
+
+    def body(top, h, w, torso_dx):
+        k = np.zeros((17, 3), np.float32)
+        cx = 400.0
+        k[5] = (cx - 20, top + 0.2 * h, 1); k[6] = (cx + 20, top + 0.2 * h, 1)         # плечи
+        k[11] = (cx - 15 + torso_dx, top + 0.55 * h, 1); k[12] = (cx + 15 + torso_dx, top + 0.55 * h, 1)  # бёдра
+        return Detection(np.array([cx - w / 2, top, cx + w / 2, top + h], np.float32), 0.9, "person", k)
+
+    tr = Track(1, "person", body(100, 300, 100, 0), 0.0, 0.0)
+    for i in range(1, 40):
+        t = i * 0.1
+        d = body(100, 300, 100, 0) if t < 1.0 else body(250, 160, 170, 0)   # сел: голова ниже на 50% роста
+        tr.det, tr.last_seen = d, t
+        tr.history.append((t, d))
+    assert rule.evaluate(tr, RuleContext(scene, zone, 3.9, [tr])) is None
