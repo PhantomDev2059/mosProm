@@ -11,6 +11,7 @@ import uuid
 import numpy as np
 
 _conn = None
+LAST_CHIP_MS = 0.0       # время вычисления на самом ускорителе по отчёту воркера стенда (последняя задача)
 
 
 def _init():
@@ -72,6 +73,7 @@ def _send(uri: str, tensors: dict, timeout: float) -> dict:
                     continue                                   # опоздавший ответ на прошлую задачу
                 ch.cancel()
                 data, _, worker = deserialize(body)
+                globals()["LAST_CHIP_MS"] = float(worker.get("inference_time") or 0.0) * 1e3
                 if not data:
                     raise RuntimeError(f"TPU: {worker['error_message']}")
                 return data

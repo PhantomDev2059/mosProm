@@ -30,11 +30,16 @@ def percentile(a, q):
 def make_runner(backend: str, name: str, models: Path, programs: Path | None):
     import onnxruntime as ort
 
+    if backend == "tpu" and "+" in name:                 # склеенная программа (linq/fuse_models.py): один запрос на кадр
+        return _cloud_runner(sorted((models / "tpu_fused").glob(f"{name}_b1_*_h1m.tpu"))[0], None)
     reg = json.loads((models / "registry.json").read_text())[name]
     if backend == "tpu":
-        from engine.backends import LinqTpuBackend
         prog = sorted((programs or models / "tpu").glob(f"{name}_b1_*_h1m.tpu"))[0]
-        be = LinqTpuBackend(str(prog), str(models / "tpu" / f"{name}_tail.onnx"))
+        tail = models / "tpu" / f"{name}_tail.onnx"
+        if not list(Path("/dev").glob("tpu*")):            # стенд хакатона: облачный воркер через RabbitMQ
+            return _cloud_runner(prog, tail)
+        from engine.backends import LinqTpuBackend
+        be = LinqTpuBackend(str(prog), str(tail))
         return be.run, (lambda x: be._inference.sync({be.input_name: x}))
     providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if backend == "cuda" else ["CPUExecutionProvider"]
     if backend == "cuda" and hasattr(ort, "preload_dlls"):
@@ -44,8 +49,27 @@ def make_runner(backend: str, name: str, models: Path, programs: Path | None):
     return (lambda x: sess.run(None, {inp: x})[0]), None
 
 
-def bench_model(run, x, runs: int) -> list[float]:
-    for _ in range(20):
+def _cloud_runner(prog: Path, tail: Path | None):
+    """Полный путь (задача в очередь стенда → TPU → хвост на CPU) и время на самом чипе по отчёту воркера."""
+    import getpass
+    from engine import tpu_gateway
+    from engine.backends import LinqCloudBackend
+    uri = f"file:///auto/cache/{getpass.getuser()}/{prog.parent.name}/{prog.name}?raw=False"
+    if tail:
+        run = LinqCloudBackend(str(prog), str(tail)).run
+    else:                                                  # pika не потокобезопасна — через пул процессов-шлюзов
+        from engine.backends import _gateway
+        run = lambda x: _gateway().submit(tpu_gateway.run, uri, "images", x).result(60)  # noqa: E731
+
+    def chip_ms(x):
+        tpu_gateway.run(uri, "images", x)
+        return tpu_gateway.LAST_CHIP_MS
+    chip_ms.reports_ms = True
+    return run, chip_ms
+
+
+def bench_model(run, x, runs: int, warmup: int = 20) -> list[float]:
+    for _ in range(warmup):
         run(x)
     t = []
     for _ in range(runs):
@@ -97,10 +121,12 @@ def main() -> None:
             except Exception as e:
                 result["models"][name] = {"error": str(e)[:200]}
                 continue
-            lat = bench_model(run, x, args.runs if backend != "cpu" else max(30, args.runs // 5))
+            lat = bench_model(run, x, args.runs if backend != "cpu" else max(30, args.runs // 5), warmup=20 if backend != "tpu" else 3)
             r = {"p50_ms": percentile(lat, 50), "p95_ms": percentile(lat, 95), "mean_ms": round(statistics.mean(lat), 2),
                  "fps_by_threads": {t: throughput(run, x, t, 5.0) for t in args.threads}}
-            if head_only is not None:
+            if getattr(head_only, "reports_ms", False):
+                r["tpu_only_p50_ms"] = percentile([head_only(x) for _ in range(min(args.runs, 40))], 50)
+            elif head_only is not None:
                 head = bench_model(head_only, x, args.runs)
                 r["tpu_only_p50_ms"] = percentile(head, 50)
             result["models"][name] = r
