@@ -242,7 +242,9 @@ class ShiftService:
         """Пользователь мини-приложения по заголовкам: X-Tg-Init-Data (подпись Telegram), иначе в демо-режиме —
         X-Demo-User / X-Demo-Role. None — доступа нет."""
         h = request.headers
-        init, token = h.get("x-tg-init-data"), getattr(self.bot, "token", "")
+        # ссылка на CSV из Telegram (openLink) не несёт заголовков — подпись приходит параметром ?tg_init=
+        init = h.get("x-tg-init-data") or request.query_params.get("tg_init")
+        token = getattr(self.bot, "token", "")
         if init and token:
             tu = check_init_data(init, token)
             if tu is not None:
