@@ -94,6 +94,27 @@ tools/run_server.sh                                               # порт 800
 
 Тесты движка: `python -m pytest`.
 
+### Готовые файлы — релиз v1.0.0
+
+Веса, программы LinQ и демо-видео в репозиторий не кладём — они в релизе (вкладка Releases):
+
+| Файл | Что внутри | Куда распаковать |
+|---|---|---|
+| `linq-guard-models-onnx.tar.gz` | 7 моделей ONNX 640×640 (поза, COCO, две СИЗ, погрузчик, огонь/дым, сигарета), `registry.json`, классификатор падения | `/workspace/linq` |
+| `linq-guard-linq-tpu-programs.tar.gz` | программы `.tpu` для LinQ H1M (лучшая версия квантования каждой модели), хвосты ONNX, пороги и отчёты квантования | `/workspace/linq` |
+| `kaski_yolov8s_best.pt` | наша модель касок, веса Ultralytics для дообучения | — |
+| `linq-guard-demo-videos.tar` | 7 демо-камер и запись смены на 9 минут | `/workspace/linq/data` |
+| `linq-guard-eval-results.tar.gz` | оценки: падения (UR Fall), сравнение моделей СИЗ, квантование, замеры скорости, графики обучения | — |
+| `SHA256SUMS.txt` | контрольные суммы | — |
+
+```bash
+gh release download v1.0.0 -R PhantomDev2059/mosProm -D /tmp/lg
+mkdir -p /workspace/linq/data && tar xzf /tmp/lg/linq-guard-models-onnx.tar.gz -C /workspace/linq
+tar xzf /tmp/lg/linq-guard-linq-tpu-programs.tar.gz -C /workspace/linq && tar xf /tmp/lg/linq-guard-demo-videos.tar -C /workspace/linq/data
+tools/run_server.sh
+```
+Пути в `registry.json` — `/workspace/linq/models/onnx/…`; на стенде LinQ: `LINQ_BACKEND=tpu tools/run_server.sh`.
+
 ## Модели и данные
 
 | Модель | Классы | Источник | Лицензия |
