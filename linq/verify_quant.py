@@ -17,7 +17,7 @@ import onnxruntime as ort
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine.geometry import iou  # noqa: E402
 from engine.postprocess import decode  # noqa: E402
-from linq.compile_tpu import calibration_frames  # noqa: E402
+from linq.compile_tpu import calibration_frames, image_frames  # noqa: E402
 
 
 def match(ref, got, thr=0.5):
@@ -44,6 +44,7 @@ def main() -> None:
     ap.add_argument("--videos", default="/workspace/linq/data/videos")
     ap.add_argument("--frames", type=int, default=40)
     ap.add_argument("--tpu-dir", default=None, help="папка с результатами compile_tpu (по умолчанию models/tpu)")
+    ap.add_argument("--images", help="проверять на изображениях из папки (например, тестовая часть набора), а не на кадрах камер")
     args = ap.parse_args()
 
     import torch
@@ -68,7 +69,10 @@ def main() -> None:
     layer_to_orig = {v: k for k, v in out_anchor.items()}
     input_name = full.get_inputs()[0].name
 
-    frames = calibration_frames(Path(args.videos), args.frames, 640, offset=0.85)   # не те кадры, что в калибровке
+    if args.images:
+        frames = image_frames(Path(args.images), args.frames, 640)
+    else:
+        frames = calibration_frames(Path(args.videos), args.frames, 640, offset=0.85)   # не те кадры, что в калибровке
     shape = (int(frames.shape[2]), int(frames.shape[3]))
     tp = fp = fn = 0
     ious, kpt_err = [], []
@@ -114,7 +118,7 @@ def main() -> None:
     rep_path = tpu / f"{args.name}_report.json"
     if rep_path.exists():
         data = json.loads(rep_path.read_text())
-        data["quant_check"] = report
+        data["quant_check_images" if args.images else "quant_check"] = report | ({"images": args.images} if args.images else {})
         rep_path.write_text(json.dumps(data, ensure_ascii=False, indent=1))
 
 

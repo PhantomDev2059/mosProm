@@ -422,11 +422,12 @@ def quality():
     for folder, tag in ((MODELS / "tpu", "v1"), (MODELS / "tpu_v2", "v2")):
         for p in folder.glob("*_report.json"):
             r = load(p) or {}
+            calib = {"preset": r.get("preset"), "smart": r.get("smart_calib"), "finetune": r.get("finetune_epochs"),
+                     "images": r.get("calib_images")}
             if r.get("quant_check"):
-                quant.setdefault(r["name"], {})[tag] = r["quant_check"] | {"preset": r.get("preset"),
-                                                                            "smart": r.get("smart_calib"),
-                                                                            "finetune": r.get("finetune_epochs"),
-                                                                            "images": r.get("calib_images")}
+                quant.setdefault(r["name"], {})[tag] = r["quant_check"] | calib
+            if r.get("quant_check_images"):             # та же программа на тестовых снимках набора, а не на кадрах камер
+                quant.setdefault(r["name"], {})[f"{tag} · снимки набора"] = r["quant_check_images"] | calib
     ppe = None
     res = Path("/workspace/linq/train/ppe_v8s_test")
     if (res / "metrics.json").exists():
