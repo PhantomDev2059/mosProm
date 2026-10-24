@@ -126,3 +126,20 @@ def test_vehicle_far_behind_person_is_not_proximity():
     ctx_near = RuleContext(scene, zone, 0, [tp, Track(3, "forklift", near, 0, 0)])
     assert rule.evaluate(tp, ctx_far) is None
     assert rule.evaluate(tp, ctx_near) is not None
+
+
+def test_proximity_needs_visible_feet_and_sane_vehicle_box():
+    from engine.rules import RuleContext, build_rule
+    from engine.scene import Scene, Zone
+    from engine.types import Track
+    rule = build_rule("vehicle_proximity", {})
+    zone = Zone("frame", "Весь кадр", None)
+    scene = Scene("c", [zone])
+    kpts = np.zeros((17, 3), np.float32)                     # скелет есть, ступни не видны (обрезаны краем кадра)
+    cut = Track(1, "person", person(400, 300, 80, 240, kpts), 0, 0)
+    near = Track(3, "forklift", Detection(np.array([500, 360, 700, 545], np.float32), 0.9, "forklift"), 0, 0)
+    assert rule.evaluate(cut, RuleContext(scene, zone, 0, [cut, near], (720, 1280))) is None
+    whole = Track(1, "person", person(400, 300, 80, 240), 0, 0)
+    huge = Track(4, "forklift", Detection(np.array([0, 0, 1000, 545], np.float32), 0.9, "forklift"), 0, 0)
+    assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, huge], (720, 1280))) is None
+    assert rule.evaluate(whole, RuleContext(scene, zone, 0, [whole, near], (720, 1280))) is not None

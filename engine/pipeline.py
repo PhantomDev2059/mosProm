@@ -30,6 +30,7 @@ class CameraPipeline:
         self.cfg = cfg
         self.detectors = detectors
         self.events = events
+        self.frame_shape: tuple[int, int] | None = None
         self.tracker = IouTracker()
         self.rules = {(z.id, rc.type): build_rule(rc.type, rc.params) for z in cfg.scene.zones for rc in z.rules}
 
@@ -54,7 +55,7 @@ class CameraPipeline:
         wall = wall or datetime.now()
         tracks = self.tracker.update(detections, now)
         for zone in self.cfg.scene.zones:
-            ctx = RuleContext(self.cfg.scene, zone, now, tracks)
+            ctx = RuleContext(self.cfg.scene, zone, now, tracks, self.frame_shape)
             for rc in zone.rules:
                 if rc.schedule and not rc.schedule.active(wall):
                     continue
@@ -83,4 +84,5 @@ class CameraPipeline:
         return FrameResult(detections, tracks, active, {e.track_id for e in active})
 
     def process(self, frame: np.ndarray, now: float, wall: datetime | None = None) -> FrameResult:
+        self.frame_shape = frame.shape[:2]
         return self.step(self.detect(frame), now, wall)

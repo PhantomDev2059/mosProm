@@ -17,6 +17,7 @@ class RuleContext:
     zone: Zone
     now: float
     tracks: list[Track]                              # все треки кадра: люди, техника, СИЗ, огонь
+    frame_shape: tuple[int, int] | None = None       # (высота, ширина) кадра, если известна
 
 
 class Rule(Protocol):

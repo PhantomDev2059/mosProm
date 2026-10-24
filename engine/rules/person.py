@@ -3,10 +3,12 @@ import numpy as np
 
 from ..geometry import ioa
 from ..scene import Scene
-from ..types import L_WRIST, NOSE, PERSON, R_WRIST, Detection, Track
+from ..types import L_ANKLE, L_WRIST, NOSE, PERSON, R_ANKLE, R_WRIST, Detection, Track
 from .base import RuleContext, Signal, register
 
-VEHICLES = ("forklift", "vehicle", "machinery")
+# «machinery» открытой модели СИЗ срабатывает на леса, щиты подстанции и стеллажи — в технику не берём
+VEHICLES = ("forklift", "vehicle")
+MAX_VEHICLE_AREA = 0.35     # рамка «техники» на треть кадра и больше — почти всегда ложная (кирпичи, лестница крупным планом)
 
 
 def head_box(det: Detection) -> np.ndarray:
@@ -88,8 +90,15 @@ class VehicleProximity:
 
     def evaluate(self, track: Track, ctx: RuleContext) -> Signal | None:
         person = track.det
+        # без видимых ступней нельзя сравнить глубину человека и техники: обрезанный краем кадра человек
+        # на переднем плане «касается» погрузчика, который стоит в глубине склада
+        if person.keypoints is not None and person.keypoint(L_ANKLE) is None and person.keypoint(R_ANKLE) is None:
+            return None
+        frame_area = ctx.frame_shape[0] * ctx.frame_shape[1] if ctx.frame_shape else None
         for v in ctx.tracks:
             if v.cls not in VEHICLES or v.last_seen != ctx.now:
+                continue
+            if frame_area and v.det.width * v.det.height > MAX_VEHICLE_AREA * frame_area:
                 continue
             if ioa(person.box, v.det.box) > 0.6:      # водитель внутри погрузчика
                 continue
