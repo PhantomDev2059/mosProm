@@ -34,6 +34,8 @@ REPLAY_TOL_S = 6.0     # видеофайл по кругу: нарушение 
 STREAM_FMT = os.environ.get("LINQ_STREAM_FMT", "webp")          # webp | jpeg — формат кадров в браузер
 STREAM_QUALITY = int(os.environ.get("LINQ_STREAM_QUALITY", "70"))
 FRAMES_INFLIGHT = int(os.environ.get("LINQ_FRAMES_INFLIGHT", "4"))   # кадров камеры одновременно на ускорителе
+# загруженные записи, которые сейчас считаются: фоновые камеры-файлы ждут, вся квота CPU стенда — лайву
+LIVE_RUNNING: set[str] = set()
 
 
 def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Detector]:
@@ -342,6 +344,15 @@ class VideoWorker(threading.Thread):
             log.exception("камера %s: ошибка обработки кадра", self.proc.cfg.id)
 
     def run(self) -> None:
+        is_live = self.proc.cfg.id.startswith("live-")
+        if is_live:
+            LIVE_RUNNING.add(self.proc.cfg.id)
+        try:
+            self._run(is_live)
+        finally:
+            LIVE_RUNNING.discard(self.proc.cfg.id)
+
+    def _run(self, is_live: bool) -> None:
         loop_offset = 0.0
         while not self.stop_flag.is_set():
             cap = cv2.VideoCapture(self.source)
@@ -356,6 +367,11 @@ class VideoWorker(threading.Thread):
             inflight: deque = deque()
             replay = self._replay() if is_file else None
             while not self.stop_flag.is_set():
+                if LIVE_RUNNING and is_file and not is_live:
+                    paused = time.time()
+                    while LIVE_RUNNING and not self.stop_flag.is_set():
+                        time.sleep(0.5)
+                    t_start += time.time() - paused
                 ok = cap.grab()
                 if not ok:
                     break
