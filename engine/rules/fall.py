@@ -54,17 +54,20 @@ class Fall:
        роста, а высота рамки сжимается до shrink от исходной. Медленно сесть или лечь — не падение.
     2. Остался внизу: hold_s после этого момента ни одного кадра с вертикальной позой. Наклонился за предметом
        или присел — через секунду снова стоит, тревоги нет. Упал — лежит, тревога через ~2 с после падения.
+    3. Именно лежит: корпус (плечи → бёдра) наклонён от вертикали на 50° и больше в доле lying_share кадров
+       после падения. Сел на стул, на корточки, встал на колени — рамка широкая, но корпус вертикальный.
     Пороги подобраны перебором на нечётных записях UR Fall (eval/sweep_fall.py), качество — на чётных.
     shrink=1.5 фактически отключает требование сжатия рамки: на проверке оно не помогло.
     """
 
     def __init__(self, drop_window_s: float = 0.8, head_drop: float = 0.45, shrink: float = 1.5,
-                 hold_s: float = 0.3, memory_s: float = 10.0):
+                 hold_s: float = 0.3, memory_s: float = 10.0, lying_share: float = 0.4):
         self.drop_window_s = drop_window_s
         self.head_drop = head_drop
         self.shrink = shrink
         self.hold_s = hold_s
         self.memory_s = memory_s
+        self.lying_share = lying_share
 
     def fall_moment(self, hist: list) -> float | None:
         moment = None
@@ -88,6 +91,10 @@ class Fall:
             return None
         if any(is_upright(d) for t, d in hist if t > t_fall + 0.3):
             return None                              # поднялся — не падение
+        after = [d for t, d in hist if t >= t_fall]
+        if self.lying_share and (not lying_like(track.det)
+                                 or sum(lying_like(d) for d in after) < self.lying_share * len(after)):
+            return None                              # сидит или на коленях: корпус вертикальный
         return Signal(0.9, {"torso_angle": round(torso_angle(track.det) or 0.0)})
 
 

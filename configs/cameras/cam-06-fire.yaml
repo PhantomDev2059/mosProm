@@ -4,5 +4,5 @@ source: cam_fire.mp4
 analysis_fps: 5
 models: [fire, pose]
 rules:
-  - {type: open_fire, confirm_s: 1.0}   # пламя мерцает: детектор ловит его через кадр
+  - {type: open_fire}
   - {type: smoke}

@@ -20,6 +20,7 @@ class Detection:
     score: float
     cls: str                               # person, helmet, head, vest, forklift, phone, fire, smoke...
     keypoints: np.ndarray | None = None    # (17, 3): x, y, уверенность
+    attrs: dict = field(default_factory=dict)   # признаки по пикселям кадра (цвет пламени и т. п.)
 
     @property
     def width(self) -> float:

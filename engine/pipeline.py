@@ -10,6 +10,7 @@ from .detector import Detector
 from .events import Event, EventManager
 from .postprocess import letterbox
 from .rules import RuleContext, build_rule
+from .rules.objects import flame_colors
 from .tracking import IouTracker
 from .types import PERSON, Detection, Track
 
@@ -85,4 +86,8 @@ class CameraPipeline:
 
     def process(self, frame: np.ndarray, now: float, wall: datetime | None = None) -> FrameResult:
         self.frame_shape = frame.shape[:2]
-        return self.step(self.detect(frame), now, wall)
+        detections = self.detect(frame)
+        for d in detections:
+            if d.cls == "fire":                     # цвет пламени — для отсева ламп, бликов и жёлтых жилетов
+                d.attrs.update(flame_colors(frame, d.box))
+        return self.step(detections, now, wall)
