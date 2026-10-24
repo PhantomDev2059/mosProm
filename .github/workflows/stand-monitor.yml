@@ -1,0 +1,88 @@
+# Монитор стенда снаружи: если стенд упал целиком, его собственный сторож (tools/stand_watchdog.sh) уже ничего не
+# пришлёт. Адрес мини-аппа берём у Telegram (кнопка меню бота, бот обновляет её при смене туннеля), проверяем, что
+# он открывается, и пишем в Telegram о падении и о восстановлении. Состояние прошлой проверки — в кэше Actions.
+name: Монитор стенда
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stand-monitor
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Прошлое состояние
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: stand-state-${{ github.run_id }}
+          restore-keys: stand-state-
+
+      - name: Проверка мини-аппа
+        env:
+          TOK: ${{ secrets.TG_BOT_TOKEN }}
+          CHAT: ${{ secrets.TG_ALERT_CHAT }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, time, urllib.request
+          tok, chat = os.environ["TOK"], os.environ["CHAT"]
+          api = f"https://api.telegram.org/bot{tok}/"
+
+          def get(url, timeout=30):
+              with urllib.request.urlopen(url, timeout=timeout) as r:
+                  return r.status, r.read()
+
+          def send(text):
+              data = json.dumps({"chat_id": chat, "text": "🛰 Монитор стенда: " + text}).encode()
+              req = urllib.request.Request(api + "sendMessage", data, {"Content-Type": "application/json"})
+              urllib.request.urlopen(req, timeout=30)
+
+          problem = None
+          try:
+              btn = json.loads(get(api + "getChatMenuButton")[1])["result"]
+              url = btn.get("web_app", {}).get("url")
+              if not url:
+                  problem = "у бота нет адреса мини-аппа — сервис на стенде не работает или туннель не поднят"
+              else:
+                  for attempt in range(3):              # туннель и сервис иногда отвечают с задержкой
+                      try:
+                          if get(url)[0] == 200:
+                              problem = None
+                              break
+                      except Exception as e:
+                          problem = f"мини-апп {url} не открывается ({type(e).__name__}: {e})"
+                      time.sleep(20)
+          except Exception as e:
+              problem = f"Telegram API недоступен: {e}"
+
+          os.makedirs("state", exist_ok=True)
+          prev = open("state/status").read().strip() if os.path.exists("state/status") else "ok"
+          last_alert = float(open("state/alert").read()) if os.path.exists("state/alert") else 0
+          if problem:
+              print("ПАДЕНИЕ:", problem)
+              if prev == "ok" or time.time() - last_alert > 3600:   # не чаще раза в час, пока лежит
+                  send("❌ " + problem)
+                  last_alert = time.time()
+              open("state/status", "w").write("down")
+          else:
+              print("ok:", url)
+              if prev == "down":
+                  send("✅ стенд снова доступен: " + url)
+              open("state/status", "w").write("ok")
+          open("state/alert", "w").write(str(last_alert))
+          EOF
+
+      - name: Сохранить состояние
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: stand-state-${{ github.run_id }}
