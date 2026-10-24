@@ -12,6 +12,7 @@
 import csv
 import hashlib
 import hmac
+import html
 import io
 import json
 import logging
@@ -83,6 +84,29 @@ def cam_label(camera: str | None, title: str | None) -> str:
     """«К-03 · Цех»; без повтора, если название уже начинается с номера («Вебкамера», «Лайв 1: …»)."""
     no, title = camera_no(camera), title or ""
     return title if not no or title.startswith(no) else f"{no} · {title}" if title else no
+
+
+def esc(v) -> str:
+    """Текст для parse_mode=HTML: названия, имена и заметки экранируются всегда."""
+    return html.escape(str(v if v is not None else ""), quote=False)
+
+
+def render_card(name: str, *args) -> bytes | None:
+    """Картинка из api/cards.py (её рисует отдельный модуль). Нет модуля, шрифтов или функция вернула None —
+    None: бот шлёт как раньше (сырой кадр или текст)."""
+    try:
+        from . import cards
+    except Exception:
+        return None
+    fn = getattr(cards, name, None)
+    if fn is None:
+        return None
+    try:
+        out = fn(*args)
+    except Exception as e:
+        log.warning("карточка %s не нарисована: %s", name, e)
+        return None
+    return bytes(out) if isinstance(out, (bytes, bytearray)) and out else None
 
 
 def fmt_dur(s: float | None) -> str:
@@ -275,6 +299,9 @@ class ShiftService:
 
     def chat_roles(self) -> dict[int, str]:
         return {r["chat_id"]: r["role"] for r in self._q("SELECT chat_id, role FROM users WHERE chat_id IS NOT NULL")}
+
+    def chat_users(self) -> list[dict]:
+        return self._q("SELECT * FROM users WHERE chat_id IS NOT NULL")
 
     def names(self, role: str) -> list[str]:
         return [r["name"] for r in self._q("SELECT name FROM users WHERE role = ? AND chat_id IS NOT NULL", [role])]
@@ -469,6 +496,11 @@ class ShiftService:
 
     def open_alarm_ids(self) -> set[str]:
         return {r["event_id"] for r in self._q("SELECT event_id FROM alarms WHERE status != 'resolved'")}
+
+    def open_alarms(self) -> list[dict]:
+        """Все неустранённые тревоги (из любой смены), старые сверху — для /alarms."""
+        return [self.alarm(r["event_id"]) for r in
+                self._q("SELECT event_id FROM alarms WHERE status != 'resolved' ORDER BY created")]
 
     # ---------- сообщения бота: что и где лежит, чтобы чистить чаты ----------
     def msg_add(self, chat_id: int, message_id: int, kind: str, event_id: str | None = None,
@@ -723,87 +755,121 @@ class ShiftService:
 
     @staticmethod
     def sla_text(sla: dict) -> str:
+        """Блок «уложились ли в норматив» (HTML)."""
+        lim = f"<code>{sla['limit_min']:g} мин</code>"
         if not sla["alarms"]:
-            return f"Тревог за смену не было (норматив устранения {sla['limit_min']:g} мин)."
+            return f"⏱ <b>Реакция на тревоги</b> · норматив {lim}\nТревог за смену не было."
+        decided = sla["resolved"] + sla["overdue"]
         share = f" ({round(sla['on_time_share'] * 100)}%)" if sla["on_time_share"] is not None else ""
-        lines = [f"Реакция на тревоги (норматив {sla['limit_min']:g} мин): тревог {sla['alarms']}, "
-                 f"принято {sla['acked']}, устранено {sla['resolved']}",
-                 f"Медиана: до «Принял» {fmt_dur(sla['median_ack_s'])}, до «Устранено» {fmt_dur(sla['median_resolve_s'])}"
-                 f" (в среднем {fmt_dur(sla['avg_resolve_s'])})",
-                 f"В норматив: {sla['on_time']}{share} · эскалаций руководителю: {sla['escalated']} · "
-                 f"просрочено сейчас: {sla['overdue']}"]
-        if sla["by_who"]:
-            lines.append("По ответственным: " + "; ".join(
-                f"{x['who']} — {x['alarms']}, медиана устранения {fmt_dur(x['median_resolve_s'])}"
-                + (f", в срок {round(x['on_time_share'] * 100)}%" if x["on_time_share"] is not None else "")
-                for x in sla["by_who"][:5]))
-        return "\n".join(lines)
-
-    @classmethod
-    def summary_text(cls, s: dict, sla: bool = False) -> str:
-        t = s["totals"]
-        lines = [f"Смена {s['shift']['id']} ({hm(s['shift']['start'])}–{hm(s['shift']['end'])})",
-                 f"Нарушений: {t['violations']}, критичных: {t['critical']}, открытых тревог: {t['open_alarms']}, "
-                 f"сотрудников: {t['people']}"]
-        if s["by_type"]:
-            lines.append("По типам: " + "; ".join(f"{x['title']} — {x['count']}" for x in s["by_type"][:6]))
-        if s["by_camera"]:
-            lines.append("По камерам: " + "; ".join(f"{cam_label(x['camera'], x['camera_title'])} — {x['count']}"
-                                                    for x in s["by_camera"][:6]))
-        if sla and s.get("sla"):
-            lines.append(cls.sla_text(s["sla"]))
+        lines = [f"⏱ <b>Реакция на тревоги</b> · норматив {lim}",
+                 f"Тревог <b>{sla['alarms']}</b> · принято <b>{sla['acked']}</b> · устранено <b>{sla['resolved']}</b>",
+                 f"Медиана: до «Принял» <code>{fmt_dur(sla['median_ack_s'])}</code> · "
+                 f"до «Устранено» <code>{fmt_dur(sla['median_resolve_s'])}</code>",
+                 f"✅ В норматив: <b>{sla['on_time']} из {decided}</b>{share} · ❗ эскалаций: {sla['escalated']}"
+                 f" · ⌛ просрочено: {sla['overdue']}"]
+        for x in sla["by_who"][:4]:
+            lines.append(f"👤 {esc(x['who'])} — {x['alarms']}"
+                         + (f", <code>{fmt_dur(x['median_resolve_s'])}</code>" if x["median_resolve_s"] is not None else "")
+                         + (f", в срок {round(x['on_time_share'] * 100)}%" if x["on_time_share"] is not None else ""))
         return "\n".join(lines)
 
     @staticmethod
-    def who_where_text(s: dict) -> str:
-        """Общая сводка для рабочих без привязки к сотруднику: кто где нарушал."""
+    def shift_head(sh: dict) -> str:
+        return f"<b>Смена {esc(sh['id'])}</b> · <code>{hm(sh['start'])}–{hm(sh['end'])}</code>"
+
+    @classmethod
+    def summary_text(cls, s: dict, sla: bool = False) -> str:
+        """Сводка смены (HTML): итоги, частые нарушения, камеры и, для персонала, реакция на тревоги."""
+        t = s["totals"]
+        lines = [f"📊 {cls.shift_head(s['shift'])}",
+                 f"⚠️ Нарушений <b>{t['violations']}</b> · критичных <b>{t['critical']}</b>",
+                 f"🔔 Открытых тревог <b>{t['open_alarms']}</b> · 👥 сотрудников <b>{t['people']}</b>"]
+        if s["by_type"]:
+            lines.append("🏷 " + " · ".join(f"{esc(x['title'])} — {x['count']}" for x in s["by_type"][:4]))
+        if s["by_camera"]:
+            lines.append("📍 " + " · ".join(f"{esc(cam_label(x['camera'], x['camera_title']))} — {x['count']}"
+                                           for x in s["by_camera"][:4]))
+        if sla and s.get("sla"):
+            lines += ["", cls.sla_text(s["sla"])]
+        return "\n".join(lines)
+
+    @classmethod
+    def who_where_text(cls, s: dict) -> str:
+        """Общая сводка для рабочих без привязки к сотруднику: кто где нарушал (HTML)."""
         by_person: dict[str, int] = {}
         for r in s["rows"]:
             name = (r["person"] or {}).get("name", "не опознаны")
             by_person[name] = by_person.get(name, 0) + 1
-        lines = [f"Смена {s['shift']['id']} — кто где нарушал", f"Всего нарушений: {len(s['rows'])}"]
+        lines = [f"📋 {cls.shift_head(s['shift'])} · кто где нарушал", f"Всего нарушений <b>{len(s['rows'])}</b>"]
         if by_person:
-            lines.append("Сотрудники: " + "; ".join(f"{k} — {v}" for k, v in sorted(by_person.items(), key=lambda kv: -kv[1])))
+            lines.append("👥 " + " · ".join(f"{esc(k)} — {v}" for k, v in
+                                           sorted(by_person.items(), key=lambda kv: -kv[1])[:6]))
         if s["by_camera"]:
-            lines.append("Камеры: " + "; ".join(f"{cam_label(x['camera'], x['camera_title'])} — {x['count']}"
-                                                for x in s["by_camera"]))
+            lines.append("📍 " + " · ".join(f"{esc(cam_label(x['camera'], x['camera_title']))} — {x['count']}"
+                                           for x in s["by_camera"][:6]))
+        lines.append("💡 Привяжите свой профиль в приложении («Это я») — тогда в отчёте будут только ваши нарушения.")
+        return "\n".join(lines)
+
+    @classmethod
+    def own_text(cls, shift: dict, name: str, rows: list[dict]) -> str:
+        """Личный отчёт рабочего (HTML)."""
+        head = f"👷 {cls.shift_head(shift)} · {esc(name)}"
+        if not rows:
+            return f"{head}\n✅ Нарушений за вами не зафиксировано. Спасибо за аккуратную работу."
+        lines = [head, f"Ваших нарушений <b>{len(rows)}</b>:"]
+        for r in sorted(rows, key=lambda r: r["started_at"])[:15]:
+            lines.append(f"• <code>{hm(r['started_at'])}</code> {esc(r['title'])} — "
+                         f"{esc(cam_label(r['camera'], r['camera_title']))}")
+        if len(rows) > 15:
+            lines.append(f"… и ещё {len(rows) - 15} — полный список в файле")
         return "\n".join(lines)
 
     @staticmethod
-    def own_text(shift_id: str, name: str, rows: list[dict]) -> str:
-        if not rows:
-            return f"Смена {shift_id}: у вас ({name}) нарушений не зафиксировано. Спасибо за безопасную работу!"
-        lines = [f"Смена {shift_id}: ваши нарушения ({name}) — {len(rows)}"]
-        for r in sorted(rows, key=lambda r: r["started_at"])[:30]:
-            lines.append(f"• {hm(r['started_at'])} {r['title']} — {cam_label(r['camera'], r['camera_title'])}")
-        if len(rows) > 30:
-            lines.append(f"… и ещё {len(rows) - 30}, полный список в файле")
-        return "\n".join(lines)
+    def with_card(card: bytes | None, name: str, text: str) -> list[tuple]:
+        """Картинка-отчёт с текстом в подписи; длинный текст — отдельным сообщением после картинки."""
+        if card is None:
+            return [("text", text)]
+        if len(text) <= 1000:
+            return [("photo", name, card, text)]
+        return [("photo", name, card, text.split("\n")[0]), ("text", text)]
+
+    def shift_payload(self, s: dict) -> dict:
+        """Сводка в том виде, что отдаёт GET /api/tg/shift (для картинки-отчёта)."""
+        return {k: v for k, v in s.items() if k not in ("rows", "alarms")}
+
+    def own_items(self, u: dict, s: dict, tag: str) -> list[tuple]:
+        """Личный отчёт рабочего: карточка (если рисуется), текст, CSV."""
+        pid = u["person_id"]
+        own = [r for r in s["rows"] if (r["person"] or {}).get("id") == pid]
+        person = self._person(pid) or {"id": pid, "name": u["name"], "photo": None}
+        photo = self.media / Path(person["photo"]).name if person.get("photo") else None
+        card = render_card("person_card", person, own, photo)
+        out = self.with_card(card, f"me-{tag}.png", self.own_text(s["shift"], person["name"], own))
+        if own:
+            out.append(("doc", f"my-{tag}.csv", self.csv_events(own), f"📄 <b>Ваши нарушения</b> · {len(own)}"))
+        return out
 
     def report_for(self, u: dict, shift: dict | None = None) -> list[tuple]:
-        """Отчёт пользователю по смене: [("text", текст) | ("doc", имя файла, байты, подпись)].
+        """Отчёт пользователю по смене: [("text", html) | ("photo"|"doc", имя файла, байты, подпись)].
 
-        Оператору, начальнику и руководителю — сводка с реакцией на тревоги, журнал и тревоги CSV; рабочему с привязкой — свои нарушения и CSV;
-        без привязки — общая сводка «кто где нарушал».
+        Оператору, начальнику и руководителю — карточка и сводка с реакцией на тревоги, журнал и тревоги CSV;
+        рабочему с привязкой — свои нарушения (карточка, текст, CSV); без привязки — общая сводка «кто где нарушал».
         """
         if shift is None:
             shift = {**self.current_shift(), "end": self.clock()}
         s = self.summary(shift=shift)
         tag = self.file_tag(shift["id"])
         if u["role"] in VIEWERS:
-            out = [("text", self.summary_text(s, sla=True)),
-                   ("doc", f"shift-{tag}.csv", self.csv_events(s["rows"]), "Журнал смены")]
+            card = render_card("shift_card", self.shift_payload(s))
+            out = self.with_card(card, f"shift-{tag}.png", self.summary_text(s, sla=True))
+            out.append(("doc", f"shift-{tag}.csv", self.csv_events(s["rows"]),
+                        f"📄 <b>Журнал смены {esc(shift['id'])}</b> · нарушений: {len(s['rows'])}"))
             if s["alarms"]:
-                out.append(("doc", f"alarms-{tag}.csv", self.csv_alarms(s["alarms"]), "Тревоги и время реакции"))
+                out.append(("doc", f"alarms-{tag}.csv", self.csv_alarms(s["alarms"]),
+                            f"⏱ <b>Тревоги и время реакции</b> · {len(s['alarms'])}"))
             return out
-        pid = u.get("person_id")
-        if pid:
-            own = [r for r in s["rows"] if (r["person"] or {}).get("id") == pid]
-            name = (self._person(pid) or {}).get("name", u["name"])
-            out = [("text", self.own_text(shift["id"], name, own))]
-            if own:
-                out.append(("doc", f"my-{tag}.csv", self.csv_events(own), "Ваши нарушения за смену"))
-            return out
+        if u.get("person_id"):
+            return self.own_items(u, s, tag)
         return [("text", self.who_where_text(s))]
 
     def _reports(self, shift: dict) -> int:
@@ -815,10 +881,12 @@ class ShiftService:
                 sent += self.send(u["chat_id"], item)
         return sent
 
-    def send(self, chat_id: int, item: tuple) -> int:
+    def send(self, chat_id: int, item: tuple, kind: str = "report", ttl: float | None = None) -> int:
         """Одно сообщение отчёта через бота; 1 — поставлено в очередь, 0 — бот выключен или нет чата."""
         if self.bot is None or not self.bot.enabled or not chat_id:
             return 0
         if item[0] == "text":
-            return self.bot.send_text(chat_id, item[1])
-        return self.bot.send_document(chat_id, item[1], item[2], item[3])
+            return self.bot.send_text(chat_id, item[1], kind=kind, ttl=ttl)
+        if item[0] == "photo":
+            return self.bot.send_photo(chat_id, item[1], item[2], item[3], kind=kind, ttl=ttl)
+        return self.bot.send_document(chat_id, item[1], item[2], item[3], kind=kind, ttl=ttl)

@@ -2,7 +2,9 @@ import hashlib
 import hmac
 import json
 import os
+import sys
 import time
+import types
 from datetime import datetime
 from urllib.parse import urlencode
 
@@ -63,17 +65,18 @@ def svc(tmp_path, monkeypatch):
     monkeypatch.delenv("LINQ_ESCALATE_MIN", raising=False)
     monkeypatch.delenv("LINQ_PUBLIC_URL", raising=False)
     monkeypatch.setenv("LINQ_SECRETS", str(tmp_path / "secrets"))
+    monkeypatch.setitem(sys.modules, "api.cards", None)      # без api/cards.py: тексты и сырые кадры
     roles(tmp_path / "roles.yaml")
     s = ShiftService(EventStore(tmp_path / "e.db"), FakePeople(), tmp_path / "media", tmp_path, tmp_path / "roles.yaml")
     s.clock = lambda: T
     return s
 
 
-def event(svc, eid, severity="critical", at=T - 600, camera="cam-01", type_="fall", title="Падение"):
+def event(svc, eid, severity="critical", at=T - 600, camera="cam-01", type_="fall", title="Падение", snapshot=None):
     row = {"id": eid, "camera": camera, "camera_title": "Цех 1", "zone": "frame", "zone_title": "Весь кадр",
            "type": type_, "title": title, "severity": severity, "track_id": 1, "started_at": at,
            "confirmed_at": at + 1, "duration_s": 5.0, "latency_s": 1.0, "score": 0.9, "details": {},
-           "snapshot": f"/media/{eid}.jpg", "clip": None, "box": [0, 0, 10, 10], "status": "new"}
+           "snapshot": snapshot or f"/media/{eid}.jpg", "clip": None, "box": [0, 0, 10, 10], "status": "new"}
     svc.store.insert(row)
     return svc.store.get(eid)
 
@@ -199,7 +202,8 @@ def test_shift_end_reports(svc):
     end = datetime(2026, 10, 14, 20, 0).timestamp()
     assert svc.check_shift_end(end + 5) == 5
     texts = {c[1][0]: c[1][1] for c in bot.calls if c[0] == "send_text"}
-    assert "ваши нарушения" in texts[1] and "кто где нарушал" in texts[2] and "Иванов — 1" in texts[2]
+    assert "Ваших нарушений <b>1</b>" in texts[1] and "кто где нарушал" in texts[2] and "Иванов — 1" in texts[2]
+    assert "Реакция на тревоги" in texts[3]
     assert sorted(c[1][0] for c in bot.calls if c[0] == "send_document") == [1, 3]
     assert svc.current_shift(end + 60)["start"] == end
 
@@ -301,7 +305,7 @@ def test_bot_alarm_card_edited_not_resent(svc):
     svc.ack("e1", "Мастер")
     out = flush()
     assert [m for m, _ in out] == ["editMessageText"] and out[0][1]["message_id"] == card["message_id"]
-    assert "👀 Принял Мастер" in out[0][1]["text"]
+    assert "👀 Принял <b>Мастер</b>" in out[0][1]["text"] and out[0][1]["parse_mode"] == "HTML"
     svc.set_escalate_min(1)
     svc.check_escalations(T + 61)
     svc.ask_report("e1", "Директор")
@@ -316,7 +320,8 @@ def test_bot_alarm_card_edited_not_resent(svc):
     assert ("deleteMessage", 555) in [(m, p["message_id"]) for m, p in out]
     edits = [p for m, p in out if m == "editMessageText"]
     assert {p["chat_id"] for p in edits} == {10, 20}
-    assert all(p["text"].startswith("✅ Устранено: Падение · К-01 · Цех 1 · user10, Потушили")
+    assert all(p["text"].startswith("✅ <b>Устранено · Падение</b>\n📍 К-01 · Цех 1\n👤 user10 · за")
+               and p["text"].endswith("📝 Потушили")
                and p["reply_markup"] == {"inline_keyboard": []} for p in edits)
     assert sorted(r["kind"] for r in svc.msg_rows()) == ["alarm", "escalation"]   # подсказка и запрос отчёта ушли
     assert {r["expires"] for r in svc.msg_rows()} == {T + 120}               # итоговые карточки живут 120 с
@@ -410,7 +415,7 @@ def test_sla_and_alarms_csv(svc):
     who = {x["who"]: x for x in sla["by_who"]}
     assert who["Петров"]["on_time_share"] == 1 and who["Сидоров"]["on_time_share"] == 0
     assert who["никто не принял"]["alarms"] == 2
-    assert "В норматив: 1 (25%)" in svc.summary_text(svc.summary(), sla=True)
+    assert "В норматив: <b>1 из 4</b> (25%)" in svc.summary_text(svc.summary(), sla=True)
     rows = svc.csv_alarms_shift().decode("utf-8-sig").splitlines()
     assert rows[0].endswith("в норматив 2 мин") and len(rows) == 5
     assert rows[1].split(";")[-1] == "да" and rows[2].split(";")[-1] == "нет" and "К-01 · Цех 1" in rows[1]
@@ -431,7 +436,7 @@ def test_operator_role_and_readonly_cards(svc, tmp_path):
     event(svc, "e2", "medium", type_="phone", title="Телефон")
     a = svc.escalate_event("e2", "user30", "звонит у конвейера")
     out = flush()
-    assert [p["chat_id"] for _, p in out] == [10] and "📣 Передал user30: звонит у конвейера" in out[0][1]["text"]
+    assert [p["chat_id"] for _, p in out] == [10] and "📣 Передал user30 · «звонит у конвейера»" in out[0][1]["text"]
     assert a["source"] == "operator" and svc.store.get("e2")["status"] == "sent_to_master"
     assert svc.check_escalations(T + 31 * 60) == ["e1", "e2"]                     # дальше — обычная тревога
     assert [x[0] for x in svc.report_for(svc.user(30))] == ["text", "doc", "doc"]   # оператору — отчёт как начальнику
@@ -453,3 +458,106 @@ def test_users_table_migrates_to_operator(tmp_path):
     assert s.user(5)["chat_id"] == 5 and s.set_role(5, "operator")["role"] == "operator"
     s.on_event_opened(event(s, "e1"))
     assert s.alarm("e1")["camera_no"] == "К-01" and s.alarm("e1")["source"] == "auto"
+
+
+# ---------- оформление: HTML, меню команд по ролям, /alarms, /myshift, карточки, профиль бота ----------
+def test_html_escaped_everywhere(svc):
+    bot, flush = live_bot(svc)
+    staff(svc, 10, "supervisor")
+    svc.on_event_opened(event(svc, "e1", title="<b>Огонь</b> & дым"))
+    p = flush()[0][1]
+    assert p["parse_mode"] == "HTML" and "&lt;b&gt;Огонь&lt;/b&gt; &amp; дым" in p["text"]
+    svc.resolve("e1", "<Мастер>", "a < b")
+    p = [p for m, p in flush() if m == "editMessageText"][0]
+    assert "&lt;Мастер&gt;" in p["text"] and "📝 a &lt; b" in p["text"]
+
+
+def test_role_command_menus(svc):
+    bot, flush = live_bot(svc)
+    bot._on_message(msg(10, 1, "/start"))                        # роли ещё нет: демо — выбор роли
+    cmds = [p for m, p in flush() if m == "setMyCommands"]
+    assert [c["command"] for c in cmds[0]["commands"]] == ["start", "role", "help"]
+    assert cmds[0]["scope"] == {"type": "chat", "chat_id": 10}
+    bot._on_callback({"id": "q", "from": {"id": 10}, "message": {"chat": {"id": 10}, "message_id": 1},
+                      "data": "role:supervisor"})
+    cmds = [p for m, p in flush() if m == "setMyCommands"]
+    assert [c["command"] for c in cmds[0]["commands"]] == ["start", "alarms", "shift", "report", "clear", "role", "help"]
+    bot._on_message(msg(10, 2, "/help"))
+    out = flush()
+    assert not [m for m, _ in out if m == "setMyCommands"]       # меню уже стоит — не дёргаем Telegram
+    assert "/alarms — Открытые тревоги" in [p for m, p in out if m == "sendMessage"][0]["text"]
+    assert [c["command"] for c in bot.commands_for("worker", False)] == ["start", "myshift", "report", "help", "clear"]
+
+
+def test_alarms_and_myshift_commands(svc):
+    bot, flush = live_bot(svc)
+    staff(svc, 10, "supervisor")
+    staff(svc, 11, "worker", person="p1")
+    staff(svc, 12, "worker")
+    svc.on_event_opened(event(svc, "e1"))
+    svc.on_event_opened(event(svc, "e2"))
+    svc.ack("e2", "Мастер")
+    flush()
+    bot._on_message(msg(10, 5, "/alarms"))
+    p = [p for m, p in flush() if m == "sendMessage"][0]
+    assert "Открытые тревоги</b> · 2" in p["text"] and "👀 Мастер" in p["text"]
+    rows = p["reply_markup"]["inline_keyboard"]
+    assert [b["callback_data"] for b in rows[0]] == ["ack:e1", "res:e1"] and [b["callback_data"] for b in rows[1]] == ["res:e2"]
+    svc.people.by_event["e1"] = "p1"
+    bot._on_message(msg(11, 6, "/myshift"))
+    p = [p for m, p in flush() if m == "sendMessage"][0]
+    assert "Ваших нарушений <b>1</b>" in p["text"] and svc.msg_rows(chat_id=11)[0]["expires"] == T + 300
+    bot._on_message(msg(12, 7, "/myshift"))
+    assert "Профиль не привязан" in [p for m, p in flush() if m == "sendMessage"][0]["text"]
+    bot._on_message(msg(12, 8, "/alarms"))
+    assert "🔒" in [p for m, p in flush() if m == "sendMessage"][0]["text"]
+
+
+def test_cards_rendered_when_module_present(svc, monkeypatch):
+    seen = []
+    fake = types.SimpleNamespace(
+        alarm_card=lambda path, a: seen.append(("alarm", a["status"])) or f"IMG-{a['status']}".encode(),
+        shift_card=lambda s: seen.append(("shift", "sla" in s and "rows" not in s)) or b"SHIFT",
+        person_card=lambda p, ev, photo: None)                 # «шрифтов нет» — откат на текст
+    monkeypatch.setitem(sys.modules, "api.cards", fake)
+    bot, flush = live_bot(svc)
+    (svc.media).mkdir(parents=True, exist_ok=True)
+    (svc.media / "e1.jpg").write_bytes(b"RAW")
+    staff(svc, 10, "supervisor")
+    staff(svc, 20, "director")
+    svc.on_event_opened(event(svc, "e1"))
+    item = bot.q.queue[0]
+    assert item[0] == "sendPhoto" and item[2]["photo"][1]() == b"IMG-open"      # рисуется в потоке отправки
+    flush()
+    svc.resolve("e1", "Мастер", "Очаг потушен")
+    out = flush()
+    assert [m for m, _ in out] == ["editMessageMedia"] and out[0][1]["media"]["caption"].startswith("✅ <b>Устранено")
+    assert seen == [("alarm", "open"), ("alarm", "resolved")]                  # перерисовано один раз на оба чата
+    svc.on_event_opened(event(svc, "e3", snapshot="/media/e1.jpg"))
+    flush()
+    fake.alarm_card = lambda path, a: None                                      # «устранено» не нарисовалось
+    svc.resolve("e3", "Мастер", "")
+    out = flush()
+    assert [m for m, _ in out] == ["editMessageCaption"] and "_fallback" not in out[0][1]
+    items = svc.report_for(svc.user(20))
+    assert [i[0] for i in items] == ["photo", "doc", "doc"] and items[0][2] == b"SHIFT"   # сводка — в подписи
+    assert "Реакция на тревоги" in items[0][3]
+    long = svc.with_card(b"X", "s.png", "📊 <b>Смена</b>\n" + "строка\n" * 300)
+    assert [i[0] for i in long] == ["photo", "text"] and long[0][3] == "📊 <b>Смена</b>"
+    staff(svc, 11, "worker", person="p1")
+    assert [i[0] for i in svc.report_for(svc.user(11))] == ["text"]
+    monkeypatch.setitem(sys.modules, "api.cards", None)
+    (svc.media / "e2.jpg").write_bytes(b"RAW")
+    svc.on_event_opened(event(svc, "e2"))
+    assert bot.q.queue[0][2]["photo"][1]() == b"RAW"                             # без модуля — сырой кадр
+
+
+def test_profile_synced_only_when_different(svc):
+    from api.telegram import BOT_ABOUT, BOT_NAME, BOT_SHORT, TelegramBot
+    assert len(BOT_NAME) <= 64 and len(BOT_ABOUT) <= 512 and len(BOT_SHORT) <= 120
+    bot = TelegramBot(svc)
+    calls = []
+    current = {"getMyName": {"name": BOT_NAME}, "getMyDescription": {"description": "старое"},
+               "getMyShortDescription": {"short_description": BOT_SHORT}}
+    assert bot.sync_profile(lambda m, p=None: calls.append(m) or current.get(m, True)) == ["description"]
+    assert [m for m in calls if m.startswith("set")] == ["setMyDescription", "setMyCommands"]
