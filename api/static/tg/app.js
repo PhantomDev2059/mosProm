@@ -39,7 +39,7 @@
   const QUICK = ['Помощь оказана', 'Очаг потушен', 'Опасность устранена', 'Ложная тревога'];
   const TABS = {
     worker: [['mine', 'Моя смена', 'user'], ['summary', 'Сводка', 'grid']],
-    operator: [['feed', 'Лента', 'list'], ['alarms', 'Тревоги', 'bell'], ['people', 'Люди', 'users'], ['report', 'Отчёт', 'doc']],
+    operator: [['feed', 'Лента', 'list'], ['alarms', 'Тревоги', 'bell'], ['people', 'Люди', 'users'], ['live', 'Камеры', 'cam'], ['report', 'Отчёт', 'doc']],
     supervisor: [['alarms', 'Тревоги', 'bell'], ['feed', 'Лента', 'list'], ['people', 'Люди', 'users'], ['live', 'Камеры', 'cam'], ['report', 'Отчёт', 'doc']],
     director: [['overview', 'Обзор', 'gauge'], ['alarms', 'Тревоги', 'bell'], ['feed', 'Лента', 'list'], ['people', 'Люди', 'users'], ['more', 'Ещё', 'dots']],
   };
@@ -578,11 +578,36 @@
   // ------------------------------------------------------------ live cameras
   function viewLive(v) {
     put(v, '<section class="sec">' + secH('04', 'Камеры · лайв', '') +
-      '<label class="drop card" id="drop"><input type="file" accept="video/*" id="file"><canvas data-still="upload"></canvas>' +
-      '<span><b>Загрузить видео</b><span>Запись пойдёт в анализ как живая камера: нарушения и тревоги — как с настоящих камер.</span></span></label>' +
-      '<div id="upl"></div><div id="lives">' + skel(1, 220) + '</div></section>');
-    $('#file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) upload(f); e.target.value = ''; });
-    let ids = '';
+      (isBoss() ? '<label class="drop card" id="drop"><input type="file" accept="video/*" id="file"><canvas data-still="upload"></canvas>' +
+      '<span><b>Загрузить видео</b><span>Запись пойдёт в анализ как живая камера: нарушения и тревоги — как с настоящих камер.</span></span></label>' : '') +
+      '<div id="upl"></div><div id="lives">' + skel(1, 220) + '</div></section>' +
+      '<section class="sec">' + secH('05', 'Камеры цеха', '<span class="live-dot" id="camsMeta">live</span>') +
+      '<div class="cam-grid" id="camGrid">' + skel(2, 110) + '</div></section>');
+    if (isBoss()) $('#file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) upload(f); e.target.value = ''; });
+    let camIds = null;
+    const refreshCams = () => api('/api/tg/cams').then((list) => {
+      list = Array.isArray(list) ? list : [];
+      const grid = $('#camGrid');
+      if (!grid) return;
+      const now2 = list.map((c) => c.camera_id).join('|');
+      if (now2 !== camIds) {
+        camIds = now2;
+        put(grid, list.length ? list.map((c) => '<article class="card crop cam-tile" data-cam="' + esc(c.camera_id) + '"><div class="shot"><img data-live="' + esc(c.camera_id) + '" alt="">' +
+          '<span class="rec">LIVE</span><span class="tag">' + esc(c.title) + '</span></div></article>').join('')
+          : empty('cam', 'Камер нет', 'Камеры цеха появятся здесь, как только пойдёт видео.'));
+        $$('.cam-tile', grid).forEach((t) => t.addEventListener('click', () => { t.classList.toggle('big'); hap.tap(); }));
+        pumpFrames();
+      }
+      list.forEach((c) => {
+        const t = grid.querySelector('[data-cam="' + CSS.escape(c.camera_id) + '"]');
+        if (!t) return;
+        t.classList.toggle('hot', c.active > 0);
+        $('.rec', t).textContent = c.paused ? 'ПАУЗА' : 'LIVE';
+      });
+      const meta = $('#camsMeta');
+      if (meta) meta.textContent = list.length && list[0].paused ? 'пауза: CPU отдан лайву' : list.length + ' камер · live';
+    }).catch(() => {});
+    let ids = null;
     const refresh = () => api('/api/tg/live').then((list) => {
       list = Array.isArray(list) ? list : [];
       const box = $('#lives');
@@ -593,7 +618,7 @@
         put(box, list.length ? list.map((c) => '<article class="card crop live-card" data-cam="' + esc(c.camera_id) + '"><div class="shot"><img data-live="' + esc(c.camera_id) + '" alt="">' +
           '<span class="rec">LIVE</span><span class="tag">' + esc(c.camera_id) + '</span></div><div class="meta"><h4>' + esc(c.title) + '</h4>' +
           '<div class="row-top"><span class="badge-st"></span><span class="mono pct"></span></div><div class="prog"><i></i></div></div></article>').join('')
-          : empty('cam', 'Лайв-камер пока нет', 'Загрузите запись с камеры цеха — здесь появится её живой кадр с разметкой.'));
+          : empty('cam', 'Лайв-камер пока нет', isBoss() ? 'Загрузите запись с камеры цеха — здесь появится её живой кадр с разметкой.' : 'Запись загружает начальник смены или руководитель — здесь появится её живой кадр с разметкой.'));
         pumpFrames();
       }
       list.forEach((c) => {
@@ -609,8 +634,10 @@
     }).catch(fail);
     S.refresh = refresh;
     refresh();
+    refreshCams();
     poll(refresh, 2500);
-    poll(pumpFrames, 500);
+    poll(refreshCams, 4000);
+    poll(pumpFrames, 1000);
   }
   function pumpFrames() {
     $$('img[data-live]').forEach((im) => {
@@ -619,7 +646,7 @@
       const n = new Image();
       n.onload = () => { im.src = n.src; im._busy = false; };
       n.onerror = () => { im._busy = false; };
-      n.src = '/api/cameras/' + encodeURIComponent(im.dataset.live) + '/frame.jpg?t=' + Date.now();
+      n.src = '/api/tg/cams/' + encodeURIComponent(im.dataset.live) + '/frame.jpg?t=' + Date.now();
     });
   }
   function upload(file) {

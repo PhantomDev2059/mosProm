@@ -360,6 +360,12 @@ table.who td.c { color: var(--crit); font-weight: 700; }
 .live-card .shot { aspect-ratio: 16 / 9; }
 .live-card .rec { left: auto; right: 9px; }
 .live-card .meta { padding: 10px 12px 12px; }
+.cam-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cam-tile { cursor: pointer; }
+.cam-tile .shot { aspect-ratio: 16 / 9; }
+.cam-tile .rec { left: auto; right: 7px; }
+.cam-tile.big { grid-column: 1 / -1; }
+.cam-tile.hot { box-shadow: 0 0 0 2px var(--crit); }
 .live-card .meta h4 { margin: 0; font: 700 17px/1.1 var(--f-disp); text-transform: uppercase; letter-spacing: .03em; }
 .live-card .meta .row-top { margin-top: 6px; }
 .badge-st { font: 700 10.5px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; padding: 4px 6px; box-shadow: inset 0 0 0 1px currentColor; }

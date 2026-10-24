@@ -25,7 +25,7 @@ from .people import PeopleIndex
 from .tg_routes import install as install_shift
 from .review import PRESETS, ReviewManager
 from .store import STATUSES, EventStore
-from .workers import SourceProcessor, VideoWorker, camera_detectors, load_detectors
+from .workers import LIVE_RUNNING, SourceProcessor, VideoWorker, camera_detectors, load_detectors
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.environ.get("LINQ_DATA", "/workspace/linq/data"))
@@ -648,6 +648,28 @@ def live_list():
         progress = round(w.position / w.duration, 3) if w and w.duration else 0.0
         out.append(info | {"status": "done" if (w is None or w.finished) else "playing", "progress": min(progress, 1.0)})
     return out
+
+
+@app.get("/api/tg/cams")
+def tg_cams():
+    """Все камеры цеха для мини-аппа (без лайв-записей — они в /api/tg/live)."""
+    out = []
+    for cid, p in processors.items():
+        if cid in live or p.latest_preview is None:
+            continue
+        st = p.stats()
+        out.append({"camera_id": cid, "title": p.cfg.title, "fps": st.get("fps"), "active": st.get("active", 0),
+                     "paused": bool(LIVE_RUNNING)})
+    return out
+
+
+@app.get("/api/tg/cams/{cid}/frame.jpg")
+def tg_cam_frame(cid: str):
+    """Кадр с разметкой, 640 px: он и так кодируется на каждом кадре для роликов — CPU стенда не тратится."""
+    p = processors.get(cid)
+    if p is None or p.latest_preview is None:
+        raise HTTPException(404, "кадра ещё нет")
+    return Response(p.latest_preview, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
 app.mount("/media", StaticFiles(directory=MEDIA), name="media")
