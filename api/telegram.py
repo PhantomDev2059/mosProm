@@ -25,7 +25,8 @@ log = logging.getLogger("linqguard.telegram")
 NOTES = ("Помощь оказана", "Очаг потушен", "Опасность устранена", "Ложная тревога")
 LEVELS = {"critical": ("🚨", "КРИТИЧНО"), "high": ("⚠️", "ОПАСНО"), "medium": ("🔸", "ВНИМАНИЕ")}
 ROLE_ICONS = {"worker": "👷", "operator": "🖥", "supervisor": "🦺", "director": "💼"}
-HTML_METHODS = {"sendMessage", "sendPhoto", "sendDocument", "editMessageText", "editMessageCaption"}
+HTML_METHODS = {"sendMessage", "sendPhoto", "sendDocument", "sendVideo", "editMessageText", "editMessageCaption"}
+CLIP_TTL = 600                       # ролик для проверки — служебный, сам удалится через 10 мин
 AUX_TTL = 60              # служебные сообщения (подтверждения, ошибки, подсказки) живут столько секунд
 DELETE_MAX_AGE = 47.5 * 3600   # Telegram даёт боту удалять свои сообщения не старше 48 ч
 
@@ -265,6 +266,25 @@ class TelegramBot:
                          {"document": (filename, data)},
                          remember={"kind": kind, "expires": self.svc.clock() + ttl if ttl else None})
 
+    def send_video(self, chat_id: int, path: Path, caption: str = "", ttl: float | None = None,
+                   event_id: str | None = None) -> int:
+        """Ролик нарушения (±4 с вокруг тревоги) по кнопке «▶️ Видео» — чтобы проверить, что нарушение настоящее."""
+        rem = {"kind": "aux", "event_id": event_id, "expires": self.svc.clock() + ttl if ttl else None}
+        return self._put("sendVideo", {"chat_id": chat_id, "caption": fit(caption, 1024), "supports_streaming": True},
+                         {"video": (path.name, path.read_bytes())}, remember=rem)
+
+    def _send_clip(self, cq: dict, chat: int, eid: str) -> None:
+        row = self.svc.store.get(eid)
+        path = self.svc.media / Path(row["clip"]).name if row and row.get("clip") else None
+        if path is None or not path.is_file():
+            return self._answer(cq, "Ролик ещё записывается — попробуйте через несколько секунд")
+        self._answer(cq, "Отправляю ролик")
+        a = self.svc.alarm(eid)
+        place = self.place(a) if a else esc(row["camera_title"])
+        self.send_video(chat, path, f"▶️ <b>{esc(row['title'])}</b>\n📍 {place}\n"
+                                    f"🕐 <code>{hm(row['started_at'])}</code> · ролик ±4 с вокруг тревоги",
+                        ttl=CLIP_TTL, event_id=eid)
+
     def _aux(self, chat_id: int, text: str, buttons: list[list[dict]] | None = None, ttl: float = AUX_TTL,
              event_id: str | None = None) -> int:
         """Служебное сообщение: само удалится через ttl секунд (или раньше, когда шаг завершится)."""
@@ -343,7 +363,7 @@ class TelegramBot:
         if a["status"] == "open":
             row.append({"text": "✅ Принял", "callback_data": f"ack:{eid}"})
         row.append({"text": "🛠 Устранено", "callback_data": f"res:{eid}"})
-        return [row, self.app_button(frag=f"#alarm={eid}")]
+        return [row, [{"text": "▶️ Видео", "callback_data": f"clip:{eid}"}], self.app_button(frag=f"#alarm={eid}")]
 
     @staticmethod
     def place(a: dict) -> str:
@@ -374,7 +394,8 @@ class TelegramBot:
 
     def send_alarm(self, chats: list[int], a: dict, readonly: bool = False) -> int:
         """Карточка тревоги; readonly — операторам, для сведения, без кнопок."""
-        return self._send_card(chats, a, self.alarm_text(a), [] if readonly else self.alarm_buttons(a), "alarm")
+        watch = [[{"text": "▶️ Видео", "callback_data": f"clip:{a['event_id']}"}]]       # оператору — только посмотреть
+        return self._send_card(chats, a, self.alarm_text(a), watch if readonly else self.alarm_buttons(a), "alarm")
 
     @staticmethod
     def escalation_text(a: dict, responsible: str, minutes: int) -> str:
@@ -386,7 +407,8 @@ class TelegramBot:
                           "Можно попросить у начальника смены короткий отчёт о ходе работ."])
 
     def send_escalation(self, chats: list[int], a: dict, responsible: str, minutes: int) -> int:
-        buttons = [[{"text": "📋 Запросить отчёт", "callback_data": f"ask:{a['event_id']}"}],
+        buttons = [[{"text": "📋 Запросить отчёт", "callback_data": f"ask:{a['event_id']}"},
+                    {"text": "▶️ Видео", "callback_data": f"clip:{a['event_id']}"}],
                    self.app_button(frag=f"#alarm={a['event_id']}")]
         return self._send_card(chats, a, self.escalation_text(a, responsible, minutes), buttons, "escalation")
 
@@ -607,6 +629,10 @@ class TelegramBot:
             self.ensure_commands(chat, u)
             self._answer(cq, f"Роль: {ROLE_TITLES[arg]}")
             return self._menu(chat, u, edit_mid=msg.get("message_id"))
+        if kind == "clip":
+            if u["role"] not in VIEWERS:
+                return self._answer(cq, "Нет доступа")
+            return self._send_clip(cq, chat, arg)
         if kind in ("ack", "res", "note") and u["role"] not in RESPONDERS:
             return self._answer(cq, "Принимает и устраняет тревогу начальник смены")
         if u["role"] not in BOSSES:

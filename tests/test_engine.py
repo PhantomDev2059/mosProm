@@ -198,3 +198,20 @@ def test_sitting_is_not_a_fall():
         tr.det, tr.last_seen = d, t
         tr.history.append((t, d))
     assert rule.evaluate(tr, RuleContext(scene, zone, 3.9, [tr])) is None
+
+
+def test_vest_close_up_is_not_no_vest():
+    """Крупный план: рамка человека обрезана, жилет больше «зоны корпуса» — нарушения нет."""
+    from engine.rules import RuleContext, build_rule
+    from engine.scene import Scene, Zone
+    from engine.types import Track
+    rule = build_rule("no_vest", {})
+    zone = Zone("frame", "Весь кадр", None)
+    scene = Scene("c", [zone])
+    k = np.zeros((17, 3), np.float32)
+    k[5], k[6] = (500, 420, 1), (900, 420, 1)                 # плечи; бёдра за кадром
+    man = Track(1, "person", Detection(np.array([380, 60, 1000, 720], np.float32), 0.9, "person", k), 0, 0)
+    vest = Track(2, "vest", Detection(np.array([420, 380, 1000, 720], np.float32), 0.8, "vest"), 0, 0)
+    no_vest = Track(3, "no_vest", Detection(np.array([450, 400, 950, 700], np.float32), 0.6, "no_vest"), 0, 0)
+    assert rule.evaluate(man, RuleContext(scene, zone, 0, [man, vest, no_vest], (720, 1280))) is None
+    assert rule.evaluate(man, RuleContext(scene, zone, 0, [man, no_vest], (720, 1280))) is not None

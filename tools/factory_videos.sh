@@ -57,4 +57,56 @@ cam cam_hall px_5100044.mp4 px_5100041.mp4 px_31834970.mp4 mixkit_man_walking_wa
 # длинная запись смены для режима «Разбор смены»: камеры вперемешку с обычной работой цехов (Mixkit)
 cam smena_23-10_demo normal_22033.mp4 cam_site.mp4 normal_21795.mp4 normal_20770.mp4 cam_warehouse.mp4 normal_23550.mp4 normal_2244.mp4 \
   cam_shop.mp4 normal_23010.mp4 cam_corridor.mp4 normal_14785.mp4 normal_21950.mp4 cam_smoking.mp4 normal_23406.mp4 cam_fire.mp4 normal_23107.mp4 cam_hall.mp4
+
+# ---------- «Демо-смена» для лайв-режима мини-аппа: demo_all_violations.mp4 (~7,5 мин) ----------
+# Нарушения по одному-двум роликам, между ними 20–40 с обычной работы склада и цехов (Pexels, без нарушений
+# по прогону всеми правилами). Падение — UR Fall: после падения держим последний кадр 14 с (человек лежит
+# без движения), чтобы сработало «неподвижное лежание» (окно правила 10 с).
+while read id crop; do pexels $id "$([ "$crop" = v ] && echo "$VCROP")" & done <<'LIST'
+4291728 -
+4292579 -
+39053017 -
+37651089 v
+4477603 -
+40142783 -
+4294434 -
+7019233 -
+32244794 -
+31352808 -
+4295735 -
+6997690 -
+LIST
+wait
+for n in 02 06; do
+  [ -s parts/urfall_${n}_hold.mp4 ] || ffmpeg -loglevel error -y -i parts/urfall_$n.mp4 -an -vf "tpad=stop_mode=clone:stop_duration=14" \
+    -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p parts/urfall_${n}_hold.mp4
+done
+: > parts/demo_all_violations.txt
+for p in px_5100046 normal_21795 \
+    mixkit_people_walking_warehouse             `# нет каски, нет жилета` \
+    px_32243653 px_4291728 px_4292579 \
+    px_5100044                                  `# телефон в проходе склада` \
+    mixkit_forklift_warehouse px_31352805 \
+    px_3805926                                  `# курение` \
+    normal_2244 px_4477603 \
+    urfall_06_hold                              `# падение, затем неподвижное лежание` \
+    px_39053017 mixkit_worker_driving_warehouse \
+    px_12730657                                 `# горящий баллон — открытый огонь` \
+    px_37651089 normal_22033 px_32244794 \
+    px_40142783                                 `# мастерская: без каски и без жилета` \
+    px_4294434 px_7019233 \
+    px_38533947                                 `# газовая резка — задымление` \
+    px_31352808 normal_20770 \
+    px_32243654                                 `# пешеходы и погрузчики в проезде` \
+    px_4295735 mixkit_worker_machine_corridor \
+    px_31834970                                 `# бег по складу` \
+    mixkit_welding_factory normal_20770 \
+    urfall_02_hold                              `# второе падение` \
+    px_6997690                                  `# дым на участке тяжёлого производства` \
+    px_4292579 px_5100046; do
+  [ -s parts/$p.mp4 ] && echo "file $p.mp4" >> parts/demo_all_violations.txt
+done
+ffmpeg -loglevel error -y -f concat -safe 0 -i parts/demo_all_violations.txt -an -vf "fps=25,setsar=1" -c:v libx264 -preset veryfast \
+  -crf 23 -pix_fmt yuv420p -movflags +faststart demo_all_violations.mp4
+echo "demo_all_violations: $(grep -c file parts/demo_all_violations.txt) роликов"
 echo FACTORY_VIDEOS_DONE
