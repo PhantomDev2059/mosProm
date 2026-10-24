@@ -26,8 +26,52 @@ MODELS = Path(os.environ.get("LINQ_MODELS", "/workspace/linq/models"))
 INFLIGHT = int(os.environ.get("PRECOMPUTE_INFLIGHT", "12"))
 
 
+def precompute_file(detectors, path: Path, models: list[str], compute: list[str], out: Path, fps: float = 5.0) -> None:
+    """Запись для лайв-режима (узнаётся по отпечатку содержимого): считаем только модели compute,
+    в заголовке — полный набор камеры models; части с разных машин склеивает dets_io.merge_parts."""
+    from engine.config import parse_camera
+    cfg = parse_camera({"camera": "file", "source": str(path), "analysis_fps": fps, "models": models, "rules": []})
+    pipe = CameraPipeline(cfg, [detectors[n] for n in compute], events=None)
+    cap = cv2.VideoCapture(str(path))
+    step = max(1, round((cap.get(cv2.CAP_PROP_FPS) or 25.0) / fps))
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) // step
+    pool, q, idx, n, t0 = ThreadPoolExecutor(INFLIGHT), deque(), 0, 0, time.time()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"camera": "live", "source": path.name, "models": models, "computed": compute, "step": step},
+                           ensure_ascii=False) + "\n")
+        while True:
+            if not cap.grab():
+                break
+            idx += 1
+            if idx % step:
+                continue
+            ok, frame = cap.retrieve()
+            if not ok:
+                break
+            if frame.shape[1] > 1280:
+                s_ = 1280 / frame.shape[1]
+                frame = cv2.resize(frame, (1280, round(frame.shape[0] * s_)))
+            q.append((idx, pool.submit(pipe.detect, frame)))
+            while len(q) >= INFLIGHT:
+                i, fut = q.popleft()
+                f.write(json.dumps({"i": i, "d": [to_json(d) for d in fut.result()]}) + "\n")
+                n += 1
+                if n % 100 == 0:
+                    print(f"{path.name} [{'+'.join(compute)}]: {n}/{total}, {n / (time.time() - t0):.1f} к/с", flush=True)
+        while q:
+            i, fut = q.popleft()
+            f.write(json.dumps({"i": i, "d": [to_json(d) for d in fut.result()]}) + "\n")
+    print(f"готово: {out} ({n + len(q)} кадров за {time.time() - t0:.0f} с)", flush=True)
+
+
 def main() -> None:
     detectors = load_detectors(MODELS / "registry.json", os.environ.get("LINQ_BACKEND", "tpu"))
+    if "--file" in sys.argv:                      # --file PATH --models a b c --compute a b --out PATH
+        a = sys.argv
+        grab = lambda flag: a[a.index(flag) + 1:next((j for j in range(a.index(flag) + 1, len(a)) if a[j].startswith("--")), len(a))]  # noqa: E731
+        precompute_file(detectors, Path(grab("--file")[0]), grab("--models"), grab("--compute"), Path(grab("--out")[0]))
+        return
     cams = load_cameras(os.environ.get("LINQ_CONFIGS", ROOT / "configs" / "cameras"))
     only = set(sys.argv[1:])
     pool = ThreadPoolExecutor(INFLIGHT)

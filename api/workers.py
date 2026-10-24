@@ -16,7 +16,7 @@ import numpy as np
 
 from engine.backends import LinqCloudBackend, LinqFusedBackend, LinqTpuBackend, OnnxBackend
 from engine.config import CameraConfig
-from engine.dets_io import from_json, load_replay, replay_path
+from engine.dets_io import file_digest, from_json, load_replay, replay_by_hash, replay_path
 from engine.detector import Detector, ModelSpec
 from engine.events import Event, EventManager
 from engine.geometry import iou
@@ -326,8 +326,10 @@ class VideoWorker(threading.Thread):
         if os.environ.get("LINQ_REPLAY", "0") != "1":
             return None
         names = [d.spec.name for d in self.proc.pipeline.detectors]
-        data = load_replay(replay_path(Path(os.environ.get("LINQ_DATA", "/workspace/linq/data")), self.proc.cfg.id),
-                           self.proc.cfg.source, names)
+        data_dir = Path(os.environ.get("LINQ_DATA", "/workspace/linq/data"))
+        data = load_replay(replay_path(data_dir, self.proc.cfg.id), self.proc.cfg.source, names)
+        if not data and os.path.isfile(self.source):          # запись, загруженная в лайв-режим: узнаём по содержимому
+            data = load_replay(replay_by_hash(data_dir, file_digest(self.source)), self.proc.cfg.source, names)
         if data:
             log.info("камера %s: воспроизведение %d кадров, посчитанных на TPU", self.proc.cfg.id, len(data))
         return data

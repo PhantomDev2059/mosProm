@@ -45,6 +45,36 @@ def load_replay(path: Path, source: str, models: list[str]) -> dict[int, list[di
         return None
     with open(path, encoding="utf-8") as f:
         head = json.loads(f.readline())
-        if head.get("source") != source or head.get("models") != models:
+        if (head.get("source") != source and not str(path.parent).endswith("by-hash")) or head.get("models") != models:
             return None
         return {int(row["i"]): row["d"] for row in map(json.loads, f)}
+
+
+def file_digest(path) -> str:
+    """Отпечаток видеофайла (sha1 содержимого): прогон на TPU узнаёт запись, даже загруженную под другим именем."""
+    import hashlib
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()[:16]
+
+
+def replay_by_hash(data_dir: Path, digest: str) -> Path:
+    return Path(data_dir) / "dets" / "by-hash" / f"{digest}.jsonl"
+
+
+def merge_parts(parts: list[Path], out: Path) -> None:
+    """Склейка прогонов одной записи по частям моделей (TPU на стенде + FP32 на другой машине) по номерам кадров."""
+    head, rows = None, {}
+    for p in parts:
+        with open(p, encoding="utf-8") as f:
+            h = json.loads(f.readline())
+            head = head or {k: v for k, v in h.items() if k != "computed"}
+            for row in map(json.loads, f):
+                rows.setdefault(int(row["i"]), []).extend(row["d"])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(json.dumps(head, ensure_ascii=False) + "\n")
+        for i in sorted(rows):
+            f.write(json.dumps({"i": i, "d": rows[i]}) + "\n")
