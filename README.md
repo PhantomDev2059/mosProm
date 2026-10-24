@@ -135,6 +135,7 @@ tools/run_server.sh                                               # порт 800
 |---|---|---|
 | `linq-guard-models-onnx.tar.gz` | 7 моделей ONNX 640×640 (поза, COCO, две СИЗ, погрузчик, огонь/дым, сигарета), `registry.json`, классификатор падения | `/workspace/linq` |
 | `linq-guard-linq-tpu-programs.tar.gz` | программы `.tpu` для LinQ H1M (лучшая версия квантования каждой модели), хвосты ONNX, пороги и отчёты квантования | `/workspace/linq` |
+| `linq-guard-tpu-fused-programs.tar.gz` | склеенные программы `.tpu` (модели одной камеры — одна программа): поза+каски, поза+каски+погрузчик, поза+погрузчик, поза+огонь | `<LINQ_MODELS>` (рядом с `tpu/`) |
 | `kaski_yolov8s_best.pt` | наша модель касок, веса Ultralytics для дообучения | — |
 | `linq-guard-demo-videos.tar` | 7 демо-камер и запись смены на 9 минут | `/workspace/linq/data` |
 | `linq-guard-eval-results.tar.gz` | оценки: падения (UR Fall), сравнение моделей СИЗ, квантование, замеры скорости, графики обучения | — |
