@@ -30,9 +30,9 @@ YAML
 
 if ! stage train; then
   if [ -f $ROOT/ppe_v8s/weights/last.pt ]; then
-    yolo detect train resume model=$ROOT/ppe_v8s/weights/last.pt
+    nice -n 19 yolo detect train resume model=$ROOT/ppe_v8s/weights/last.pt
   else
-    yolo detect train model=yolov8s.pt data=$ROOT/ppe.yaml epochs=40 imgsz=640 batch=24 workers=12 device=$DEVICE \
+    nice -n 19 yolo detect train model=yolov8s.pt data=$ROOT/ppe.yaml epochs=40 imgsz=640 batch=24 workers=12 device=$DEVICE \
       project=$ROOT name=ppe_v8s exist_ok=True cos_lr=True patience=15 plots=True
   fi
   mark train
@@ -66,8 +66,8 @@ if ! stage compile_ppe2; then
   wait_sdk
   PY=/workspace/linq/sdk/.venv/bin/python
   cd $APP
-  $PY linq/compile_tpu.py --onnx /workspace/linq/models/onnx/ppe2.onnx --name ppe2 --calib 120 --smart
-  $PY linq/verify_quant.py --name ppe2 --frames 140
+  nice -n 19 $PY linq/compile_tpu.py --onnx /workspace/linq/models/onnx/ppe2.onnx --name ppe2 --calib 120 --smart
+  nice -n 19 $PY linq/verify_quant.py --name ppe2 --frames 140
   mark compile_ppe2
 fi
 echo NIGHT_GPU_DONE
