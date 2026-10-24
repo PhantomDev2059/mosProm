@@ -128,6 +128,22 @@ def test_vehicle_far_behind_person_is_not_proximity():
     assert rule.evaluate(tp, ctx_near) is not None
 
 
+def test_calibrated_proximity_measures_to_vehicle_edge():
+    from engine.rules import RuleContext, build_rule
+    from engine.scene import FloorMap, Scene, Zone
+    from engine.types import Track
+    rule = build_rule("vehicle_proximity", {})
+    zone = Zone("frame", "Весь кадр", None)
+    floor = FloorMap([[0, 0], [1000, 0], [1000, 1000], [0, 1000]], [[0, 0], [10, 0], [10, 10], [0, 10]])   # 1 px = 1 см
+    scene = Scene("c", [zone], floor=floor)
+    p = Track(1, "person", person(70, 340, 60, 160), 0, 0)                                       # ноги в (100, 500)
+    fork = Track(2, "forklift", Detection(np.array([300, 300, 700, 500], np.float32), 0.9, "forklift"), 0, 0)
+    sig = rule.evaluate(p, RuleContext(scene, zone, 0, [p, fork]))
+    assert sig is not None and sig.details["distance_m"] == 2.0          # до края 2 м, до середины было бы 4 м
+    far = Track(3, "forklift", Detection(np.array([500, 300, 900, 500], np.float32), 0.9, "forklift"), 0, 0)
+    assert rule.evaluate(p, RuleContext(scene, zone, 0, [p, far])) is None    # край в 4 м — не опасно
+
+
 def test_proximity_needs_visible_feet_and_sane_vehicle_box():
     from engine.rules import RuleContext, build_rule
     from engine.scene import Scene, Zone

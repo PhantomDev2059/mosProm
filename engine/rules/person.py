@@ -130,7 +130,11 @@ class VehicleProximity:
                 speed = Scene.speed_in_heights(v, ctx.now) or 0.0
                 if speed < self.min_vehicle_speed:
                     continue
-            dist = ctx.scene.distance_m(person.foot, v.det.foot)
+            # до ближайшей точки нижней кромки техники, а не до её середины: у погрузчика длиной 3 м
+            # «центр в 2,5 м» значит, что край уже вплотную к человеку
+            px = float(person.foot[0])
+            near = (min(max(px, float(v.det.box[0])), float(v.det.box[2])), float(v.det.box[3]))
+            dist = ctx.scene.distance_m(person.foot, near)
             if dist is not None:
                 if dist < self.min_distance_m:
                     return Signal(1.0 - dist / self.min_distance_m, {"distance_m": round(dist, 1), "vehicle": v.cls})

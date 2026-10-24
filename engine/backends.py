@@ -30,16 +30,13 @@ class OnnxBackend:
                 ort.preload_dlls()           # CUDA и cuDNN из pip-пакетов nvidia-*, которые ставит torch
             providers.insert(0, "CUDAExecutionProvider")
         opts = ort.SessionOptions()
-        if providers[0].startswith("CUDA"):
-            # на GPU потоки CPU почти не нужны, а у каждой из десятков сессий (камеры × модели) свой пул,
-            # по умолчанию на все ядра и с активным ожиданием — они отнимают процессор у декодирования видео
-            opts.intra_op_num_threads = 2
-            opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        else:
-            # на CPU тоже не «на все ядра»: на стенде 64 ядра и десятки сессий — упираемся в лимит потоков
-            opts.intra_op_num_threads = int(os.environ.get("LINQ_CPU_THREADS", "4"))
-            opts.inter_op_num_threads = 1
-            opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        # у каждой сессии (камеры × модели) свой пул потоков, по умолчанию на все видимые ядра и с активным
+        # ожиданием. В контейнере с квотой CPU меньше nproc (vast: 64 ядра видно, квота ~15; стенд LinQ — 1,5 ядра)
+        # семь моделей — это сотни крутящихся потоков, и квота душит всё: кадр идёт в 20 раз медленнее
+        threads = os.environ.get("LINQ_ORT_THREADS") or os.environ.get("LINQ_CPU_THREADS") or "2"
+        opts.intra_op_num_threads = 2 if providers[0].startswith("CUDA") else int(threads)
+        opts.inter_op_num_threads = 1
+        opts.add_session_config_entry("session.intra_op.allow_spinning", "0")
         self.session = ort.InferenceSession(path, sess_options=opts, providers=providers)
         self.input_name = self.session.get_inputs()[0].name
         self.name = "onnx-" + ("cuda" if self.session.get_providers()[0].startswith("CUDA") else "cpu")
