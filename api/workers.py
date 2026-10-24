@@ -60,12 +60,13 @@ class SourceProcessor:
     """Общее для всех источников: конвейер, снимки-доказательства, запись в журнал, оповещения."""
 
     def __init__(self, cfg: CameraConfig, detectors: list[Detector], store: EventStore, media: Path,
-                 publish: Callable[[dict], None], notifier=None):
+                 publish: Callable[[dict], None], notifier=None, people=None):
         self.cfg = cfg
         self.store = store
         self.media = media
         self.publish = publish
         self.notifier = notifier
+        self.people = people             # опознание нарушителя по лицу (api/people.py), может не быть
         self._pending: list[tuple[str, Event]] = []
         self.events = EventManager(cfg.id, on_open=self._on_open, on_update=self._on_update, on_close=self._on_close)
         self.pipeline = CameraPipeline(cfg, detectors, self.events)
@@ -181,6 +182,8 @@ class SourceProcessor:
                 self.publish({"kind": "event_open", "event": row})
                 if self.notifier is not None:
                     self.notifier.event_opened(row)
+                if self.people is not None and ev.track_id != 0:      # событие человека, а не огня в зоне
+                    self.people.submit(ev.id, frame, ev.box)
                 self._clips[ev.id] = {"frames": list(self._ring), "until": now + CLIP_POST_S}
             else:
                 last = self._last_update_pub.get(ev.id, 0)
@@ -191,6 +194,9 @@ class SourceProcessor:
                     continue
                 self._snapshot(frame, res, ev)
                 self.store.update(ev.id, duration_s=ev.duration_s, score=ev.score, details=ev.details, closed=0)
+                # лицо часто видно не в момент тревоги (упал, отвернулся с сигаретой) — ещё 5 с пробуем опознать
+                if self.people is not None and ev.track_id != 0 and now - ev.confirmed_at <= 5.0:
+                    self.people.submit(ev.id, frame, ev.box)
                 self.publish({"kind": "event_update", "event": self.store.get(ev.id)})
 
     def _feed_clips(self, jpg: bytes, now: float) -> None:
@@ -255,6 +261,14 @@ class VideoWorker(threading.Thread):
         self.source = source
         self.stop_flag = threading.Event()
         self._infer = ThreadPoolExecutor(max_workers=FRAMES_INFLIGHT, thread_name_prefix=f"frames-{proc.cfg.id}")
+        self.duration = 0.0             # длина файла, с (для лайв-загрузки — прогресс воспроизведения)
+        self.position = 0.0
+        self.finished = False
+
+    def events_close_and_finish(self) -> None:
+        """Запись кончилась: закрыть открытые события, чтобы длительности и ролики дописались."""
+        self.proc.events.close_all()
+        self.finished = True
 
     def _replay(self):
         if os.environ.get("LINQ_REPLAY", "0") != "1":
@@ -281,6 +295,7 @@ class VideoWorker(threading.Thread):
                 time.sleep(3)
                 continue
             src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+            self.duration = (cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0) / src_fps
             step = max(1, round(src_fps / self.proc.cfg.analysis_fps))
             is_file = not self.source.startswith(("rtsp://", "http://", "https://"))
             idx, t_start, video_t = 0, time.time(), 0.0
@@ -297,6 +312,7 @@ class VideoWorker(threading.Thread):
                 if not ok:
                     break
                 video_t = idx / src_fps
+                self.position = video_t
                 if is_file:                                     # держим темп реального времени
                     delay = t_start + video_t - time.time()
                     if delay > 0:
@@ -319,6 +335,7 @@ class VideoWorker(threading.Thread):
             cap.release()
             loop_offset += video_t + 1.0
             if not self.proc.cfg.loop and is_file:
+                self.events_close_and_finish()
                 break
             if is_file:
                 self.proc.new_pass(loop_offset)

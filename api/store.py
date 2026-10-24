@@ -67,16 +67,17 @@ class EventStore:
 
     def query(self, type_: str | None = None, camera: str | None = None, severity: str | None = None,
               status: str | None = None, since: float | None = None, until: float | None = None,
-              limit: int = 500) -> list[dict]:
+              limit: int = 500, zone: str | None = None) -> list[dict]:
+        """Фильтры журнала; since/until — границы начала нарушения в секундах Unix, включительно."""
         where, args = [], []
-        for col, val in (("type", type_), ("camera", camera), ("severity", severity), ("status", status)):
+        for col, val in (("type", type_), ("camera", camera), ("zone", zone), ("severity", severity), ("status", status)):
             if val:
                 where.append(f"{col} = ?")
                 args.append(val)
-        if since:
+        if since is not None:
             where.append("started_at >= ?")
             args.append(since)
-        if until:
+        if until is not None:
             where.append("started_at <= ?")
             args.append(until)
         sql = "SELECT * FROM events" + (" WHERE " + " AND ".join(where) if where else "")
@@ -85,8 +86,8 @@ class EventStore:
             rows = self.db.execute(sql, [*args, limit]).fetchall()
         return [_row(r) for r in rows]
 
-    def stats(self, since: float) -> dict:
-        rows = self.query(since=since, limit=100000)
+    def stats(self, since: float | None, until: float | None = None) -> dict:
+        rows = self.query(since=since, until=until, limit=100000)
         by_type, by_camera, by_status, by_severity = {}, {}, {}, {}
         heat = [[0] * 24 for _ in range(7)]
         latencies = []
