@@ -11,6 +11,9 @@ from .person import head_box, torso_box
 # Проверка по пикселям рамки (подобрано на срабатываниях в демо-смене):
 FLAME_MIN = 0.2      # доля «огненных» пикселей: красный—жёлтый, насыщенный, яркий; у пламени 0,27–0,63, у ламп ~0
 WHITE_MAX = 0.4      # лампа и блик сварки — почти белое пятно (0,7 и больше), у пламени до 0,2
+# Искры от болгарки по цвету как пламя, но это сноп мелких штрихов:
+SPARK_ASPECT = 3.5   # длинная узкая полоса: у снопа искр стороны рамки 4,5–9 к 1, у пламени до 2,9
+SPARK_EDGES = 0.15   # доля контуров в рамке: у искр 0,17–0,25, у пламени до 0,13
 
 
 def flame_colors(frame: np.ndarray, box: np.ndarray) -> dict:
@@ -19,8 +22,15 @@ def flame_colors(frame: np.ndarray, box: np.ndarray) -> dict:
     if crop.size == 0:
         return {}
     h, s, v = cv2.split(cv2.cvtColor(crop, cv2.COLOR_BGR2HSV))
+    edges = cv2.Canny(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), 80, 160) > 0
     return {"flame": float((((h <= 35) | (h >= 170)) & (s >= 90) & (v >= 140)).mean()),
-            "white": float(((s < 50) & (v >= 220)).mean())}
+            "white": float(((s < 50) & (v >= 220)).mean()), "edges": float(edges.mean())}
+
+
+def sparks(det: Detection) -> bool:
+    """Сноп искр от болгарки или отрезной машинки: вытянутая полоса или россыпь мелких штрихов."""
+    aspect = max(det.width, det.height) / max(min(det.width, det.height), 1.0)
+    return aspect >= SPARK_ASPECT or det.attrs.get("edges", 0.0) >= SPARK_EDGES
 
 
 def on_person(det: Detection, ctx: RuleContext) -> bool:
@@ -39,7 +49,7 @@ class OpenFire:
         colors = det.attrs
         if colors and (colors.get("flame", 1.0) < FLAME_MIN or colors.get("white", 0.0) > WHITE_MAX):
             return None
-        if on_person(det, ctx):
+        if on_person(det, ctx) or sparks(det):
             return None
         return Signal(det.score, {"flame": round(colors["flame"], 2)} if "flame" in colors else {})
 

@@ -167,6 +167,12 @@ def test_fire_check_rejects_lamp_and_vest():
     worker = Track(3, "person", person(560, 60, 180, 500), 0, 0)   # тот же оранжевый — на корпусе человека
     vest = Detection(np.array([600, 200, 700, 300], np.float32), 0.8, "fire", attrs={"flame": 0.6, "white": 0.0})
     assert rule.evaluate(Track(4, "fire", vest, 0, 0), RuleContext(scene, zone, 0, [worker], (720, 1280))) is None
+    spray = Detection(np.array([700, 400, 1100, 460], np.float32), 0.8, "fire")       # сноп искр: полоса 400×60
+    frame[400:460, 700:1100] = 0
+    for x in range(700, 1100, 9):
+        frame[425 + (x % 7):430 + (x % 7), x:x + 5] = (0, 140, 255)                      # мелкие оранжевые штрихи
+    spray.attrs.update(flame_colors(frame, spray.box))
+    assert rule.evaluate(Track(5, "fire", spray, 0, 0), ctx) is None
 
 
 def test_sitting_is_not_a_fall():
