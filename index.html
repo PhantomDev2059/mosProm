@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinQ Guard</title>
+<style>
+  :root { --bg: #05070f; --fg: #e8ecf6; --dim: rgba(232,236,246,.55); --acc: #f2922b; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #stage { position: absolute; left: 50%; top: 50%; aspect-ratio: 16 / 9; width: min(100vw, calc(100vh * 16 / 9));
+    transform: translate(-50%, -50%); }
+  section { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity .35s ease, visibility 0s .35s; }
+  section.on { opacity: 1; visibility: visible; transition: opacity .35s ease; }
+  section img { width: 100%; height: 100%; display: block; user-select: none; }
+  section video { position: absolute; display: block; background: #000; cursor: pointer; object-fit: contain; }
+  #hud { position: fixed; right: 16px; bottom: 12px; display: flex; gap: 6px; align-items: center; transition: opacity .4s; }
+  #hud b { font-weight: 600; color: var(--dim); margin-left: 8px; font-variant-numeric: tabular-nums; }
+  #hud span { width: 7px; height: 7px; border-radius: 50%; background: rgba(232,236,246,.25); cursor: pointer; }
+  #hud span.on { background: var(--acc); }
+  body.idle { cursor: none; }
+  body.idle #hud, body.idle #help { opacity: 0; }
+  #help { position: fixed; left: 16px; bottom: 12px; color: var(--dim); transition: opacity .4s; }
+  #notes { position: fixed; left: 0; right: 0; bottom: 0; max-height: 38vh; overflow: auto; padding: 18px 22px 40px;
+    background: rgba(5,7,15,.94); border-top: 1px solid rgba(255,255,255,.12); font-size: 18px; line-height: 1.5;
+    transform: translateY(100%); transition: transform .25s; }
+  body.notes #notes { transform: none; }
+  #notes h4 { margin: 0 0 6px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--acc); }
+  #notes p { margin: 0; max-width: 1100px; }
+  @media (max-width: 700px) { #help { display: none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+<section data-n="1"><img src="s/1.jpg" alt="Слайд 1" draggable="false"></section>
+<section data-n="2"><img src="s/2.jpg" alt="Слайд 2" draggable="false"></section>
+<section data-n="3"><img src="s/3.jpg" alt="Слайд 3" draggable="false"><video src="v/film.mp4" poster="s/poster3.jpg" preload="metadata" playsinline style="left:13.33%;top:18.15%;width:73.33%;height:73.33%"></video></section>
+<section data-n="4"><img src="s/4.jpg" alt="Слайд 4" draggable="false"></section>
+<section data-n="5"><img src="s/5.jpg" alt="Слайд 5" draggable="false"></section>
+<section data-n="6"><img src="s/6.jpg" alt="Слайд 6" draggable="false"><video src="v/bot.mp4" poster="s/poster6.jpg" preload="metadata" playsinline style="left:5.00%;top:18.52%;width:66.67%;height:66.67%"></video></section>
+<section data-n="7"><img src="s/7.jpg" alt="Слайд 7" draggable="false"></section>
+</div>
+<div id="hud"></div>
+<div id="help">← → листать · F — на весь экран · N — заметки докладчика · пробел — пауза видео</div>
+<div id="notes"><h4>Заметки · слайд <span id="nn"></span></h4><p id="nt"></p></div>
+<script>
+(() => {
+  const NOTES = ["LinQ Guard — видеоконтроль промышленной безопасности на ускорителе LinQ. Система сама смотрит камеры цеха, видит нарушение и сразу зовёт того, кто может его устранить: начальника смены, в Telegram, с кадром и сроком. Справа QR-код бота: можно открыть прямо сейчас и выбрать роль — начальник смены, руководитель, оператор или рабочий.", "Почему это важно. По данным Минтруда, шестьдесят пять процентов несчастных случаев на производстве связаны с человеческим фактором: человек без каски, без жилета, с телефоном в проходе, слишком близко к погрузчику. Десять лет назад таких было семьдесят четыре процента, и пострадавших за это время стало вдвое меньше — культура безопасности работает, когда нарушение замечают вовремя. Именно это и видно на камере. LinQ Guard замечает нарушение за секунды и сразу зовёт того, кто может его устранить.", "Вот как это выглядит за смену. Камеры цеха, модель видит каждого человека — это скелеты — и предметы с уверенностью: каска, голова без каски, телефон, сигарета. Нарушение подтверждается во времени, и только тогда уходит тревога начальнику смены в Telegram: карточка с кадром и сроком, «Принял», «Устранено». Десять видов нарушений: нет каски, нет жилета, телефон, пешеход у погрузчика, курение, падение, лежит без движения, бег, открытый огонь, задымление. Все рамки и тревоги — настоящие срабатывания системы.", "Перенос на ускоритель LinQ. Шесть из семи моделей работают на TPU: поза считается на чипе за восемь с половиной миллисекунд, это около ста семнадцати кадров в секунду, остальные модели — восемь–тринадцать миллисекунд. Модели одной камеры мы склеили в одну программу TPU, кадр уходит на чип один раз — это в полтора–два с половиной раза быстрее. Квантуем на кадрах наших камер и проверяем: людей TPU находит так же, как исходная модель, в девяноста восьми процентах. Каски сознательно оставили в FP32: после INT8 класс «голова без каски» почти исчезает, а точность важнее. Узкое место сейчас не чип, а общий стенд: на своём узле LinQ это реальное время.", "Что под капотом. Семь нейросетей: поза с семнадцатью точками скелета — из неё падение, неподвижное лежание, бег и дистанция до техники; наша модель касок; жилеты; погрузчики; огонь и дым с проверкой цвета пламени; сигарета; телефон. Модель касок мы дообучили: открытая находила пять процентов голов без каски, наша — восемьдесят пять, mAP 0,93 против 0,29 на отдельном тесте. Поверх моделей — десять правил, которые подтверждают нарушение во времени, чтобы на одно нарушение была одна тревога. Для камер с калибровкой пола считаем реальные метры до погрузчика и скорость бега.", "Что получает человек на заводе. Начальнику смены приходит тревога: кадр, камера, срок устранения и кнопка видео — ролик нарушения плюс-минус четыре секунды для проверки. Он нажимает «Принял», потом «Устранено» с коротким отчётом. Руководитель видит, что не закрыто в срок, время реакции каждого начальника и отчёт смены. Оператор смотрит ленту всех камер и передаёт нарушение начальнику. Рабочий находит себя по фото лица и получает свои итоги смены — без имён и фамилий.", "Камеры, которые не пишут архив, а предотвращают травмы. LinQ Guard: увидели, сообщили, устранили в срок. Код, модели, программы для LinQ и все ролики — в репозитории, QR-код на экране. Спасибо!"];
+  const slides = Array.from(document.querySelectorAll('section'));
+  const hud = document.getElementById('hud');
+  let cur = -1;
+  slides.forEach((_, i) => { const d = document.createElement('span'); d.onclick = (e) => { e.stopPropagation(); go(i); }; hud.appendChild(d); });
+  const count = document.createElement('b'); hud.appendChild(count);
+  const dots = Array.from(hud.querySelectorAll('span'));
+
+  function playVideo(v) {
+    v.currentTime = 0;
+    v.muted = false;
+    v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });   // без жеста пользователя браузер даёт только без звука
+  }
+  function warm(i) {                                                         // видео соседних слайдов — заранее
+    const s = slides[i]; const v = s && s.querySelector('video');
+    if (v && v.preload !== 'auto') { v.preload = 'auto'; v.load(); }
+  }
+  function go(i) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i === cur) return;
+    if (cur >= 0) { slides[cur].classList.remove('on'); const v = slides[cur].querySelector('video'); if (v) v.pause(); }
+    cur = i;
+    const s = slides[cur];
+    s.classList.add('on');
+    const v = s.querySelector('video');
+    if (v) playVideo(v);
+    warm(cur + 1); warm(cur - 1);
+    dots.forEach((d, k) => d.classList.toggle('on', k === cur));
+    count.textContent = (cur + 1) + ' / ' + slides.length;
+    document.getElementById('nn').textContent = cur + 1;
+    document.getElementById('nt').textContent = NOTES[cur] || '—';
+    history.replaceState(null, '', '#' + (cur + 1));
+  }
+  const video = () => slides[cur].querySelector('video');
+  function toggle() {
+    const v = video(); if (!v) return false;
+    if (v.paused || v.ended) { if (v.ended) v.currentTime = 0; v.muted = false; v.play(); } else v.pause();
+    return true;
+  }
+  function fullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (['arrowright', 'pagedown', 'enter'].includes(k)) go(cur + 1);
+    else if (['arrowleft', 'pageup', 'backspace'].includes(k)) go(cur - 1);
+    else if (k === ' ') { if (!toggle()) go(cur + (e.shiftKey ? -1 : 1)); }
+    else if (k === 'home') go(0);
+    else if (k === 'end') go(slides.length - 1);
+    else if (k === 'f' || k === 'а') fullscreen();
+    else if (k === 'n' || k === 'т') document.body.classList.toggle('notes');
+    else if (k === 'm' || k === 'ь') { const v = video(); if (v) v.muted = !v.muted; }
+    else if (/^[1-9]$/.test(k)) go(+k - 1);
+    else return;
+    e.preventDefault();
+  });
+  document.getElementById('stage').addEventListener('click', (e) => {
+    if (e.target.tagName === 'VIDEO') { toggle(); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    go(cur + (e.clientX - r.left < r.width / 3 ? -1 : 1));
+  });
+  let tx = null;
+  document.addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (tx === null) return; const dx = e.changedTouches[0].clientX - tx; tx = null;
+    if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1));
+  });
+  let idle;
+  const wake = () => { document.body.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => document.body.classList.add('idle'), 2500); };
+  document.addEventListener('mousemove', wake); wake();
+  slides.forEach((s) => { const im = new Image(); im.src = s.querySelector('img').src; });
+  go(Math.max(0, (parseInt(location.hash.slice(1), 10) || 1) - 1));
+})();
+</script>
+</body>
+</html>
