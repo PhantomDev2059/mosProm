@@ -249,7 +249,7 @@ def test_routes(svc, tmp_path):
     event(s, "e5", "medium", type_="phone", title="Телефон")
     assert c.post("/api/tg/events/e5/escalate", headers=worker).status_code == 403
     a = c.post("/api/tg/events/e5/escalate", json={"comment": "без каски у станка"}, headers=op).json()
-    assert (a["source"], a["source_by"], a["status"], a["camera_no"]) == ("operator", "Демо: o", "open", "К-01")
+    assert (a["source"], a["source_by"], a["status"], a["camera_no"]) == ("operator", "Оператор · демо", "open", "К-01")
     assert c.post("/api/tg/events/e5/escalate", headers=op).json()["already"] is True
     assert c.post("/api/tg/events/nope/escalate", headers=op).status_code == 404
     assert c.get("/api/tg/alarms", headers=op).status_code == 200

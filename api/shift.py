@@ -260,7 +260,8 @@ class ShiftService:
             self._x("INSERT INTO users (tg_id, name, role, demo, created) VALUES (?, ?, NULL, 1, ?)",
                     [tg_id, "Демо-пользователь" if key == "demo" else f"Демо: {key}", self.clock()])
         if role in ROLES:
-            self._x("UPDATE users SET role = ? WHERE tg_id = ?", [role, tg_id])
+            # в демо имя — по роли («Оператор · демо»), а не технический ключ браузера
+            self._x("UPDATE users SET role = ?, name = ? WHERE tg_id = ?", [role, f"{ROLE_TITLES[role]} · демо", tg_id])
         return self.user(tg_id)
 
     def user_from_request(self, request) -> dict | None:
