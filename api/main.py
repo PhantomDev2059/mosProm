@@ -25,7 +25,7 @@ from .people import PeopleIndex
 from .tg_routes import install as install_shift
 from .review import PRESETS, ReviewManager
 from .store import STATUSES, EventStore
-from .workers import SourceProcessor, VideoWorker, load_detectors
+from .workers import SourceProcessor, VideoWorker, camera_detectors, load_detectors
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.environ.get("LINQ_DATA", "/workspace/linq/data"))
@@ -105,7 +105,7 @@ workers: dict[str, VideoWorker] = {}
 
 def _models_for(cfg) -> list:
     names = cfg.raw.get("models") or list(detectors)
-    return [detectors[n] for n in names if n in detectors]
+    return camera_detectors(names, detectors, MODELS)
 
 
 def _resolve(source: str) -> str:

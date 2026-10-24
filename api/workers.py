@@ -14,7 +14,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from engine.backends import LinqCloudBackend, LinqTpuBackend, OnnxBackend
+from engine.backends import LinqCloudBackend, LinqFusedBackend, LinqTpuBackend, OnnxBackend
 from engine.config import CameraConfig
 from engine.dets_io import from_json, load_replay, replay_path
 from engine.detector import Detector, ModelSpec
@@ -54,6 +54,26 @@ def load_detectors(registry_path: Path, backend: str = "onnx") -> dict[str, Dete
             be = OnnxBackend(spec.path)
         out[name] = Detector(spec, be)
     return out
+
+
+def camera_detectors(names: list[str], detectors: dict[str, Detector], models_dir: Path) -> list[Detector]:
+    """Модели камеры. Если для её набора моделей на TPU есть склеенная программа (models/tpu_fused/a+b+c_b1_*.tpu),
+    эти модели получают общий бэкенд: один запрос к TPU на кадр вместо одного на каждую модель."""
+    dets = [detectors[n] for n in names if n in detectors]
+    on_tpu = [d.spec.name for d in dets if d.backend.name == "linq-tpu"]
+    fused_dir = models_dir / "tpu_fused"
+    if len(on_tpu) < 2 or os.environ.get("LINQ_FUSED", "1") != "1" or not fused_dir.exists():
+        return dets
+    program = next((p for p in fused_dir.glob("*_b1_*_h1m.tpu")
+                    if set(p.name.split("_b1_")[0].split("+")) == set(on_tpu)), None)
+    if program is None:
+        return dets
+    tails = {d.spec.name: next(t for t in (models_dir / "tpu_v2" / f"{d.spec.name}_tail.onnx",
+                                           models_dir / "tpu" / f"{d.spec.name}_tail.onnx") if t.exists())
+             for d in dets if d.spec.name in on_tpu}
+    log.info("модели %s — одной программой %s", "+".join(on_tpu), program.name)
+    return [Detector(d.spec, LinqFusedBackend(str(program), d.spec.name, len(on_tpu), str(tails[d.spec.name])))
+            if d.spec.name in on_tpu else d for d in dets]
 
 
 class SourceProcessor:

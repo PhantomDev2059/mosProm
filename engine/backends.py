@@ -91,6 +91,48 @@ class LinqCloudBackend:
         return self._tail.run(None, {k: feats[k] for k in self._tail_inputs})[0]
 
 
+class LinqFusedBackend:
+    """Модель внутри склеенной программы TPU (linq/fuse_models.py): все модели камеры — один запрос на кадр.
+
+    Первая модель кадра отправляет тензор, остальные ждут тот же ответ (ключ — сам объект тензора: конвейер
+    готовит letterbox кадра один раз и отдаёт его всем моделям). Выходы модели в ответе — с префиксом «<имя>__»,
+    дальше её обычный хвост на CPU."""
+
+    name = "linq-tpu-fused"
+    _pending: dict = {}
+    _lock = threading.Lock()
+
+    def __init__(self, program_path: str, member: str, n_members: int, tail_onnx: str, input_name: str = "images"):
+        import getpass
+        import onnxruntime as ort
+        sub = os.path.basename(os.path.dirname(program_path))
+        self.uri = f"file:///auto/cache/{getpass.getuser()}/{sub}/{os.path.basename(program_path)}?raw=False"
+        self.prefix, self.n = f"{member}__", n_members
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads, opts.inter_op_num_threads = 1, 1
+        self._tail = ort.InferenceSession(tail_onnx, sess_options=opts, providers=["CPUExecutionProvider"])
+        self._tail_inputs = [i.name for i in self._tail.get_inputs()]
+        self.input_name = input_name
+        self.last_tpu_ms = 0.0
+
+    def run(self, tensor: np.ndarray) -> np.ndarray:
+        from . import tpu_gateway
+        key = (self.uri, id(tensor))
+        t0 = time.perf_counter()
+        with self._lock:
+            entry = self._pending.get(key)
+            if entry is None:
+                fut = _gateway().submit(tpu_gateway.run, self.uri, self.input_name, np.ascontiguousarray(tensor, np.float32))
+                entry = self._pending[key] = [fut, self.n, tensor]     # тензор держим, чтобы id не переиспользовался
+            entry[1] -= 1
+            if entry[1] <= 0:
+                del self._pending[key]
+        feats = entry[0].result(60)
+        self.last_tpu_ms = (time.perf_counter() - t0) * 1e3
+        p = self.prefix
+        return self._tail.run(None, {k: feats[p + k] for k in self._tail_inputs})[0]
+
+
 class LinqTpuBackend:
     """Программа .tpu на ускорителе LinQ через pytpu; хвост модели (decode головы YOLO) — ONNX на CPU.
 
