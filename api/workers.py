@@ -31,6 +31,8 @@ cv2.setNumThreads(2)       # камеры и так работают в свои
 CLIP_PRE_S = 4.0       # секунд до подтверждения нарушения во фрагменте
 CLIP_POST_S = 4.0      # и после
 REPLAY_TOL_S = 6.0     # видеофайл по кругу: нарушение на той же позиции записи — повтор уже записанного
+STREAM_FMT = os.environ.get("LINQ_STREAM_FMT", "webp")          # webp | jpeg — формат кадров в браузер
+STREAM_QUALITY = int(os.environ.get("LINQ_STREAM_QUALITY", "70"))
 FRAMES_INFLIGHT = int(os.environ.get("LINQ_FRAMES_INFLIGHT", "4"))   # кадров камеры одновременно на ускорителе
 
 
@@ -90,8 +92,9 @@ class SourceProcessor:
         self._pending: list[tuple[str, Event]] = []
         self.events = EventManager(cfg.id, on_open=self._on_open, on_update=self._on_update, on_close=self._on_close)
         self.pipeline = CameraPipeline(cfg, detectors, self.events)
-        self.latest_jpeg: bytes | None = None
         self.latest_preview: bytes | None = None
+        self._annot = self._small = None
+        self._frame_id, self._enc, self._enc_lock = 0, {}, threading.Lock()
         self.latest_raw: np.ndarray | None = None
         self.proc_ms: deque = deque(maxlen=120)
         self.frames = 0
@@ -149,7 +152,7 @@ class SourceProcessor:
     def _wall(self, t: float) -> float:
         return self._clock_offset + t
 
-    def process(self, frame: np.ndarray, now: float, detections: list | None = None) -> bytes:
+    def process(self, frame: np.ndarray, now: float, detections: list | None = None) -> None:
         """detections — уже посчитанные детекции кадра (конвейер VideoWorker держит несколько кадров в полёте)."""
         t0 = time.perf_counter()
         if detections is None:
@@ -159,11 +162,14 @@ class SourceProcessor:
             res = self.pipeline.step(self.pipeline.enrich(frame, detections), now, datetime.now())
         annotated = draw(frame, self.cfg.scene, res)
         self._flush_pending(frame, res, now)
-        ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
-        self.latest_jpeg = buf.tobytes() if ok else self.latest_jpeg
         small = cv2.resize(annotated, (640, round(annotated.shape[0] * 640 / annotated.shape[1])))
-        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 72])
+        # превью в JPEG нужно каждый кадр — из него собираются ролики-доказательства; полный кадр и поток
+        # в браузер кодируются лениво (stream / latest_jpeg): нет зрителя — нет затрат CPU
+        ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, STREAM_QUALITY])
         self.latest_preview = buf.tobytes() if ok else self.latest_preview
+        with self._enc_lock:
+            self._frame_id += 1
+            self._annot, self._small, self._enc = annotated, small, {}
         self._feed_clips(self.latest_preview, now)
         self.latest_raw = frame
         self.proc_ms.append((time.perf_counter() - t0) * 1e3)
@@ -172,7 +178,33 @@ class SourceProcessor:
         if time.time() - self._fps_t >= 2:
             self.fps = self._fps_n / (time.time() - self._fps_t)
             self._fps_t, self._fps_n = time.time(), 0
-        return self.latest_jpeg
+
+    def _encoded(self, kind: str, fmt: str) -> bytes | None:
+        """Кадр в нужном виде, кодируется один раз на кадр и только по запросу."""
+        with self._enc_lock:
+            img = self._annot if kind == "full" else self._small
+            if img is None:
+                return None
+            key, cache, fid = (kind, fmt), self._enc, self._frame_id
+            if key in cache:
+                return cache[key]
+        if fmt == "webp":
+            ok, buf = cv2.imencode(".webp", img, [cv2.IMWRITE_WEBP_QUALITY, STREAM_QUALITY])
+        else:
+            ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, STREAM_QUALITY])
+        data = buf.tobytes() if ok else None
+        with self._enc_lock:
+            if fid == self._frame_id:
+                self._enc[key] = data
+        return data
+
+    @property
+    def latest_jpeg(self) -> bytes | None:
+        return self._encoded("full", "jpeg")
+
+    def stream(self, full: bool) -> bytes | None:
+        """Кадр для ленты в браузере: WebP 70 в 2–3 раза легче JPEG при незаметной разнице (LINQ_STREAM_FMT)."""
+        return self._encoded("full" if full else "preview", STREAM_FMT)
 
     def _flush_pending(self, frame: np.ndarray, res: FrameResult, now: float) -> None:
         pending, self._pending = self._pending, []

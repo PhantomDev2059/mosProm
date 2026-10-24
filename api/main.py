@@ -180,7 +180,7 @@ async def stream(cid: str):
     async def gen():
         last = None
         while True:
-            jpg = p.latest_jpeg
+            jpg = await asyncio.to_thread(lambda: p.latest_jpeg)
             if jpg is not None and jpg is not last:
                 last = jpg
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
@@ -542,10 +542,13 @@ async def ws_frames(ws: WebSocket):
         while not task.done():
             for cid in list(want["cams"]):
                 p = processors.get(cid)
-                jpg = None if p is None else (p.latest_jpeg if cid == want["full"] else p.latest_preview)
-                if jpg is not None and sent.get(cid) is not jpg:
-                    sent[cid] = jpg
-                    await ws.send_bytes(cid.encode()[:32].ljust(32) + jpg)
+                if p is None:
+                    continue
+                # кодирование (WebP ~10–40 мс) — в потоке, чтобы не держать цикл событий
+                img = await asyncio.to_thread(p.stream, cid == want["full"])
+                if img is not None and sent.get(cid) is not img:
+                    sent[cid] = img
+                    await ws.send_bytes(cid.encode()[:32].ljust(32) + img)
             await asyncio.sleep(0.08)
     except (WebSocketDisconnect, RuntimeError):
         pass
@@ -566,8 +569,10 @@ async def ws_webcam(ws: WebSocket):
             if frame is None:
                 continue
             now = time.time() - proc._clock_offset
-            jpg = await loop.run_in_executor(None, proc.process, frame, now)
-            await ws.send_bytes(jpg)
+            await loop.run_in_executor(None, proc.process, frame, now)
+            img = await loop.run_in_executor(None, proc.stream, True)     # WebP 70: вдвое легче JPEG
+            if img is not None:
+                await ws.send_bytes(img)
     except WebSocketDisconnect:
         pass
 

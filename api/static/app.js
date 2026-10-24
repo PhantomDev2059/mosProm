@@ -148,7 +148,7 @@ function connectFrames() {
     const id = (await m.data.slice(0, 32).text()).trim();
     const img = document.querySelector(`img[data-frame="${CSS.escape(id)}"]`);
     if (!img) return;
-    const url = URL.createObjectURL(m.data.slice(32, m.data.size, "image/jpeg"));
+    const url = URL.createObjectURL(m.data.slice(32, m.data.size))   /* WebP или JPEG — браузер определит сам */;
     const old = img.src;
     img.src = url;
     if (old.startsWith("blob:")) URL.revokeObjectURL(old);
