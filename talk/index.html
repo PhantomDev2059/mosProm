@@ -104,6 +104,19 @@ table.models td:last-child { text-align: right; white-space: nowrap; font: 600 2
 .quote { border-left: 6px solid var(--ye); padding: 8px 0 8px 32px; font-size: 32px; line-height: 1.4; }
 .quote small { display: block; font: 500 22px/1.3 JB, monospace; color: var(--mute); margin-top: 12px; }
 
+
+.code { font-variant-ligatures: none; background: #060a1c; border: 1px solid var(--line); border-radius: 14px; padding: 30px 36px; font: 400 25px/1.5 JB, monospace; color: #dfe6ff; white-space: pre; }
+.code .kw { color: var(--or); } .code .st { color: var(--cy); } .code .cm { color: #6f7ba3; } .code .fn { color: var(--ye); }
+.flow6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.flow6 .card b { display: block; font: 600 24px/1 JB, monospace; color: var(--or); margin-bottom: 14px; }
+.flow6 .card p { font-size: 30px; line-height: 1.3; }
+.who { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+.who .card h4 { font: 700 54px/1 Fira; margin-bottom: 6px; }
+.who .card .r { font: 500 22px/1 JB, monospace; letter-spacing: .08em; color: var(--mute); margin-bottom: 20px; }
+.who .card li { font-size: 28px; line-height: 1.3; margin: 0 0 12px 26px; color: var(--dim); }
+.stat5 { display: flex; gap: 24px; }
+.stat5 .card { flex: 1; padding: 28px 30px; }
+
 /* интерфейс плеера */
 #hud { position: fixed; right: 18px; bottom: 14px; display: flex; gap: 6px; align-items: center; transition: opacity .4s; z-index: 5; }
 #hud span { width: 8px; height: 8px; border-radius: 50%; background: rgba(238,241,248,.25); cursor: pointer; }
@@ -365,9 +378,159 @@ body.notes #notes { transform: none; }
   </div>
 </section>
 
+
+<!-- Р1. Как мы работали -->
+<section class="slide grid" data-notes="Отдельно расскажу, как мы работали, потому что это, наверное, самое необычное. Нас было двое, плюс AI-агенты. Михаил вёл продукт: правила нарушений, бота, мини-апп, дообучил модель касок и сделал фильм. Я отвечал за всё, что связано с LinQ: подключение к их облачному ускорителю, склейку моделей, выкатку на стенд организаторов, оптимизацию и сдачу. А большую часть кода писали AI-агенты в Claude Code по нашим задачам: код, тесты, скрипты деплоя, проверки.">
+  <div class="eyebrow">14 · Как мы работали</div>
+  <h2>Двое людей и AI-агенты</h2>
+  <div class="who">
+    <div class="card"><h4 style="color:var(--cy)">Михаил</h4><div class="r">ПРОДУКТ</div><ul>
+      <li>правила нарушений и трекинг</li><li>Telegram-бот и мини-апп</li><li>дообучение модели касок</li><li>фильм «Смена»</li></ul></div>
+    <div class="card"><h4 style="color:var(--or)">Сергей</h4><div class="r">LINQ И ПРОД</div><ul>
+      <li>подключение к облачному TPU</li><li>склейка моделей, оптимизация</li><li>выкатка на стенд организаторов</li><li>упаковка и сдача решения</li></ul></div>
+    <div class="card" style="border-color:var(--ye)"><h4 style="color:var(--ye)">AI-агенты</h4><div class="r">CLAUDE CODE</div><ul>
+      <li>писали большую часть кода</li><li>тесты и скрипты деплоя</li><li>разбор чужого SDK</li><li>проверка скриншотами и замерами</li></ul></div>
+  </div>
+</section>
+
+<!-- Р2. Цикл -->
+<section class="slide grid" data-notes="Как выглядел один цикл работы. Мы ставим задачу словами, например «лайв на стенде тормозит, найди почему». Агент читает код и логи, предлагает, что поменять, и пишет. Дальше тесты и проверка: агент сам открывает страницу в браузере и делает скриншоты. Потом выкатка на стенд и проверка на реальном ролике с замером. И решение за нами: оставить или переделать. Пример внизу: так мы ускорили лайв в три раза.">
+  <div class="eyebrow">15 · Процесс</div>
+  <h2>Один цикл работы</h2>
+  <div class="flow6">
+    <div class="card"><b>01</b><p>Ставим задачу словами: «лайв тормозит, найди почему»</p></div>
+    <div class="card"><b>02</b><p>Агент читает код и логи, предлагает решение и пишет его</p></div>
+    <div class="card"><b>03</b><p>Тесты и проверка в браузере: агент сам делает скриншоты</p></div>
+    <div class="card"><b>04</b><p>Выкатка на стенд организаторов</p></div>
+    <div class="card"><b>05</b><p>Проверка на новом ролике и замер</p></div>
+    <div class="card" style="border-color:var(--or)"><b>06</b><p>Решение за нами: оставить или переделать</p></div>
+  </div>
+  <p class="quote" style="margin-top:46px;font-size:31px">Лайв шёл 0,4 кадра в секунду. Нашли, что 1,5 ядра стенда съедают фоновые камеры, поставили их на паузу на время расчёта: стало 1,2, тревога об огне через 8 секунд.</p>
+</section>
+
+<!-- Р3. Человек и агент -->
+<section class="slide paper" data-notes="Главное, что я понял: агент очень сильно ускоряет, но решения остаются за человеком. Что строить, что важно заказчику, где упор на точность, а где на скорость, например оставить каски в полной точности на процессоре. Какие цифры честно показывать. Агент же пишет и правит код, разбирается в незнакомом SDK по документации, деплоит, следит за стендом, ищет датасеты и считает метрики. Отвечаешь за результат всё равно ты.">
+  <div class="eyebrow">16 · Разделение труда</div>
+  <h2>Агент ускоряет, отвечаешь ты</h2>
+  <div class="row" style="gap:60px">
+    <div class="col">
+      <div class="mono" style="font-size:24px;color:#b35c12;margin-bottom:8px;letter-spacing:.1em">РЕШАЕТ ЧЕЛОВЕК</div>
+      <ul class="clean" style="font-size:36px">
+        <li>что строить и что важно заказчику</li>
+        <li>где точность важнее скорости</li>
+        <li>какие цифры честно показывать</li>
+        <li>что выкатывать, а что выбросить</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="mono" style="font-size:24px;color:#2c7a50;margin-bottom:8px;letter-spacing:.1em">ДЕЛАЕТ АГЕНТ</div>
+      <ul class="clean" style="font-size:36px">
+        <li>пишет и правит код, гоняет тесты</li>
+        <li>разбирается в чужом SDK по документации</li>
+        <li>деплоит и следит за стендом</li>
+        <li>ищет датасеты, считает метрики</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Р4. Код: TPU -->
+<section class="slide grid" data-notes="Немного кода. Так кадр уходит на ускоритель. На стенде чипа рядом нет, есть очередь RabbitMQ. Мы кладём тензор в очередь tpu.direct и в заголовках говорим, какую программу для чипа запустить и куда вернуть ответ. Каждой задаче даём свой идентификатор, потому что ответы могут прийти не по порядку. Воркер возвращает результат и время, которое модель считалась на чипе, отсюда наши 8–13 миллисекунд. А чтобы не ждать каждый кадр по очереди, таких отправителей работает двенадцать параллельно.">
+  <div class="eyebrow">17 · Код</div>
+  <h2 style="font-size:84px;margin-bottom:36px">Как кадр уходит на ускоритель</h2>
+  <div class="row" style="gap:44px;align-items:flex-start">
+<div class="code" style="flex:0 0 1130px"><span class="kw">def</span> <span class="fn">send_to_tpu</span>(uri, tensors, timeout=<span class="st">30</span>):
+    mid = uuid.uuid4().hex                 <span class="cm"># id задачи</span>
+    ch.basic_publish(<span class="st">"tpu.direct"</span>, <span class="st">"input"</span>,
+        serialize(PyTask(tensors)),
+        BasicProperties(headers={
+            TARGET_URI: uri,               <span class="cm"># какая программа .tpu</span>
+            RESPONSE_KEYS: [reply],        <span class="cm"># куда вернуть ответ</span>
+            MESSAGE_ID: mid}))
+    <span class="kw">for</span> _, props, body <span class="kw">in</span> ch.consume(reply):
+        <span class="kw">if</span> props.headers[MESSAGE_ID] != mid:
+            <span class="kw">continue</span>                       <span class="cm"># чужой ответ</span>
+        data, _, worker = deserialize(body)
+        chip_ms = worker[<span class="st">"inference_time"</span>] * <span class="st">1000</span>
+        <span class="kw">return</span> data</div>
+    <div class="col">
+      <ul class="clean" style="font-size:29px">
+        <li>Чипа рядом нет: кадры идут через очередь RabbitMQ на 16 воркеров</li>
+        <li>У каждой задачи свой id: ответы приходят не по порядку</li>
+        <li>Воркер сообщает время на чипе: отсюда 8–13 мс</li>
+        <li>12 таких отправителей работают параллельно</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot">engine/tpu_gateway.py, упрощено</div>
+</section>
+
+<!-- Р5. Код: правило -->
+<section class="slide grid" data-notes="А так устроено правило «нет каски». Нейросеть просто нашла объекты: человека со скелетом и головы, каски. Правило берёт человека, по скелету вырезает область головы и смотрит, что в ней: голова без каски или каска. Если голова есть, а каски нет, это ещё не тревога, а сигнал. Сигналы копятся три секунды, и только если нарушение держится, рождается событие. А потом минуту то же нарушение повторно не шлётся. Так получается «одно нарушение — одна тревога» из требований кейса.">
+  <div class="eyebrow">18 · Код</div>
+  <h2 style="font-size:84px;margin-bottom:36px">Правило «нет каски»</h2>
+  <div class="row" style="gap:44px;align-items:flex-start">
+<div class="code" style="flex:0 0 1130px"><span class="kw">class</span> <span class="fn">NoHelmet</span>:
+    <span class="kw">def</span> <span class="fn">evaluate</span>(self, track, ctx):
+        det = track.det                <span class="cm"># человек со скелетом</span>
+        <span class="kw">if</span> det.height &lt; <span class="st">70</span> <span class="kw">or not</span> ctx.zone.contains(det.foot):
+            <span class="kw">return</span> None                <span class="cm"># далеко или вне зоны</span>
+        head = head_box(det)           <span class="cm"># голова по скелету</span>
+        bare = items_near(ctx, (<span class="st">"head"</span>, <span class="st">"no_helmet"</span>), head)
+        helmet = items_near(ctx, (<span class="st">"helmet"</span>,), head)
+        <span class="kw">if</span> bare <span class="kw">and not</span> helmet:
+            <span class="kw">return</span> Signal(max(d.score <span class="kw">for</span> d <span class="kw">in</span> bare))</div>
+    <div class="col">
+      <ul class="clean" style="font-size:29px">
+        <li>Сигнал ещё не тревога: копится <b>3 секунды</b></li>
+        <li>Держится, значит рождается одно событие</li>
+        <li><b>Минуту</b> то же нарушение не повторяется</li>
+        <li>Новое нарушение — новый такой класс</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot">engine/rules/person.py и engine/events.py</div>
+</section>
+
+<!-- Р6. Как делали презентацию -->
+<section class="slide paper" data-notes="Теперь про то, как делали презентацию и фильм. Фильм «Смена» Михаил сделал на движке procedural-film: сцены, анимация и даже музыка написаны кодом на JavaScript, а внутри настоящие кадры и срабатывания нашей системы. Эта презентация — обычная веб-страница на HTML и CSS, видео лежат на GitHub Pages и играют прямо на слайдах. Каждый слайд проверял браузер в автоматическом режиме: делал скриншоты и искал вылезающий текст. А тексты вроде тизера мы прогоняли через нескольких независимых AI-редакторов, пока они не перестали звучать как нейросеть.">
+  <div class="eyebrow">19 · Подача</div>
+  <h2>Как сделали фильм и презентацию</h2>
+  <div class="row" style="gap:30px">
+    <div class="card col"><div class="mono" style="font-size:22px;color:#b35c12;letter-spacing:.1em">ФИЛЬМ «СМЕНА»</div>
+      <p style="font-size:35px;line-height:1.35;margin-top:18px">Движок procedural-film: сцены, анимация и музыка написаны кодом на JavaScript. Внутри настоящие кадры и срабатывания системы.</p></div>
+    <div class="card col"><div class="mono" style="font-size:22px;color:#b35c12;letter-spacing:.1em">ПРЕЗЕНТАЦИЯ</div>
+      <p style="font-size:35px;line-height:1.35;margin-top:18px">Веб-страница на HTML и CSS. Видео на GitHub Pages играют прямо на слайдах, работает в любом браузере.</p></div>
+    <div class="card col"><div class="mono" style="font-size:22px;color:#b35c12;letter-spacing:.1em">ПРОВЕРКА</div>
+      <p style="font-size:35px;line-height:1.35;margin-top:18px">Браузер сам снимает каждый слайд и ищет вылезающий текст. Тексты прогоняли через независимых AI-редакторов.</p></div>
+  </div>
+</section>
+
+<!-- Р7. Цифры и грабли -->
+<section class="slide grid" data-notes="Немного цифр про сам проект: 74 коммита, почти 11 тысяч строк на Python, 4 тысячи строк интерфейса, 55 автотестов, и всё это за три дня. И грабли, на которые мы наступили. Агент уверенно ошибается, поэтому каждую цифру мы проверяли замером. Тексты от нейросети сразу видно, их приходилось переписывать. Агент не знает, что важно заказчику, этот контекст даёт только человек. И забавный случай: команда остановки сервиса нашла по имени саму себя и убила собственный запуск. На проде с такими командами надо быть аккуратным.">
+  <div class="eyebrow">20 · В цифрах</div>
+  <h2 style="margin-bottom:40px">Три дня в цифрах и грабли</h2>
+  <div class="stat5">
+    <div class="card"><div class="k" style="font-size:96px;color:var(--ye)">74</div><div class="lbl">коммита</div></div>
+    <div class="card"><div class="k" style="font-size:96px;color:var(--cy)">10,7K</div><div class="lbl">строк Python</div></div>
+    <div class="card"><div class="k" style="font-size:96px;color:var(--or)">4K</div><div class="lbl">строк интерфейса</div></div>
+    <div class="card"><div class="k" style="font-size:96px;color:var(--gr)">55</div><div class="lbl">автотестов</div></div>
+  </div>
+  <div class="row" style="gap:40px;margin-top:50px">
+    <ul class="clean col" style="font-size:30px">
+      <li>Агент уверенно ошибается: каждую цифру проверяли замером</li>
+      <li>Тексты нейросети видно сразу: переписывали руками</li>
+    </ul>
+    <ul class="clean col" style="font-size:30px">
+      <li>Что важно заказчику, агент не знает: это даёт человек</li>
+      <li>Команда остановки сервиса нашла саму себя и убила запуск</li>
+    </ul>
+  </div>
+</section>
+
 <!-- 15. Почему 2 место -->
 <section class="slide grid" data-notes="Почему нас заметили. Первое — подача: вместо скриншотов фильм на минуту, где всё видно, и QR-код бота прямо на обложке, эксперты могли сами потрогать продукт. Второе — мы продавали не детекцию, а устранение, трекер так и написал в отзыве. Третье — дообученная модель касок с цифрами. Четвёртое — всё реально работало на их ускорителе, с честными замерами. И пятое — мы работали от фидбэка: что эксперты сказали на чек-поинте, к вечеру было в продукте.">
-  <div class="eyebrow">14 · Что сработало</div>
+  <div class="eyebrow">21 · Что сработало</div>
   <h2 style="margin-bottom:40px">Почему нас заметили</h2>
   <div class="reasons">
     <div class="card"><h4 style="color:var(--ye)">Подача</h4><p>Фильм на минуту вместо скриншотов, QR бота на обложке</p></div>
@@ -381,7 +544,7 @@ body.notes #notes { transform: none; }
 
 <!-- 16. Выводы -->
 <section class="slide paper" data-notes="Что бы мы сделали иначе. Не успели проверить на настоящих IP-камерах, нет межкамерного трекинга, каски так и не удалось квантовать без потерь, а у падений полнота всего 40% — мы сознательно держали упор на точность. Что забираем с собой: начинать с пользы для заказчика, а не с модели. Показывать работающее, а не слайды. Честные цифры и оговорки вызывают больше доверия, чем красивые. И фидбэк экспертов на чек-поинтах — это бесплатный консалтинг, его надо использовать по максимуму.">
-  <div class="eyebrow">15 · Выводы</div>
+  <div class="eyebrow">22 · Выводы</div>
   <h2>Что забираем с собой</h2>
   <div class="row" style="gap:60px">
     <div class="col">
