@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinQ Guard · как мы взяли 2 место</title>
+<style>
+@font-face { font-family: Fira; src: url(fonts/FiraSansExtraCondensed-Bold.ttf); font-weight: 700; }
+@font-face { font-family: Fira; src: url(fonts/FiraSansExtraCondensed-SemiBold.ttf); font-weight: 600; }
+@font-face { font-family: Golos; src: url(fonts/GolosText-VF.ttf); font-weight: 400 900; }
+@font-face { font-family: JB; src: url(fonts/JetBrainsMono-VF.ttf); font-weight: 100 800; }
+:root {
+  --bg: #0b122f; --bg2: #101c43; --line: #26335f; --fg: #eef1f8; --dim: #b3bcd8; --mute: #7d88ad;
+  --or: #f2922b; --ye: #f2c230; --cy: #7fd0ea; --re: #ef5a4c; --gr: #4cc38a;
+  --paper: #efe8d6; --paper2: #f6f1e4; --ink: #141a2c; --ink2: #4a4f61; --rule: #d8ccb2;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #04060f; overflow: hidden; color: var(--fg); }
+#stage { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; transform-origin: 0 0; }
+.slide { position: absolute; inset: 0; padding: 104px 140px 96px; display: flex; flex-direction: column;
+  background: var(--bg); font: 400 34px/1.42 Golos, system-ui, sans-serif; opacity: 0; visibility: hidden;
+  transition: opacity .35s, visibility 0s .35s; overflow: hidden; }
+.slide.on { opacity: 1; visibility: visible; transition: opacity .35s; }
+.slide.grid { background-image: linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px); background-size: 48px 48px; }
+.slide.paper { background: var(--paper); color: var(--ink); }
+.eyebrow { font: 500 26px/1 JB, monospace; letter-spacing: .2em; text-transform: uppercase; color: var(--or); margin-bottom: 26px; }
+.paper .eyebrow { color: #b35c12; }
+h1, h2 { font-family: Fira; font-weight: 700; letter-spacing: -.01em; line-height: .98; }
+h1 { font-size: 200px; }
+h2 { font-size: 96px; margin-bottom: 52px; }
+.dim { color: var(--dim); } .paper .dim { color: var(--ink2); }
+.mono { font-family: JB, monospace; }
+.foot { position: absolute; left: 140px; right: 140px; bottom: 44px; font: 400 22px/1.3 JB, monospace; color: var(--mute); }
+.paper .foot { color: #8a8270; }
+.row { display: flex; gap: 40px; }
+.col { flex: 1; min-width: 0; }
+.card { background: var(--bg2); border: 1px solid var(--line); border-radius: 14px; padding: 34px 36px; }
+.paper .card { background: var(--paper2); border-color: var(--rule); }
+.k { font-family: Fira; font-weight: 700; line-height: .95; }
+.lbl { font-size: 28px; line-height: 1.35; color: var(--dim); margin-top: 14px; }
+.paper .lbl { color: var(--ink2); }
+ul.clean { list-style: none; }
+ul.clean li { padding: 16px 0 16px 34px; position: relative; border-bottom: 1px solid var(--line); }
+.paper ul.clean li { border-color: var(--rule); }
+ul.clean li::before { content: ""; position: absolute; left: 0; top: 33px; width: 12px; height: 12px; border-radius: 3px; background: var(--or); }
+.vid { position: relative; background: #000; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.45); }
+.vid video { display: block; width: 100%; height: 100%; object-fit: contain; cursor: pointer; }
+.vbar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: rgba(255,255,255,.1); }
+.vbar i { display: block; height: 100%; width: 0; background: var(--or); }
+.tag { display: inline-block; font: 600 22px/1 JB, monospace; letter-spacing: .08em; padding: 10px 14px; border-radius: 8px; }
+
+/* титул */
+.title-badge { position: absolute; right: 140px; top: 104px; width: 380px; height: 380px; border-radius: 50%;
+  border: 3px solid var(--ye); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.title-badge b { font: 700 210px/.8 Fira; color: var(--ye); }
+.title-badge span { font: 600 40px/1.1 Fira; color: var(--fg); margin-top: 18px; }
+.title-badge small { font: 500 24px/1 JB, monospace; color: var(--dim); margin-top: 12px; letter-spacing: .08em; }
+
+/* слайд-идея */
+.motto div { font: 700 210px/1 Fira; letter-spacing: -.015em; }
+
+/* схема */
+.flow { position: relative; height: 640px; }
+.node { position: absolute; width: 360px; height: 230px; border-radius: 16px; background: var(--bg2); border: 2px solid var(--line); padding: 26px 28px; }
+.node .n { font: 600 22px/1 JB, monospace; color: var(--or); letter-spacing: .1em; }
+.node h4 { font: 700 46px/1 Fira; margin: 14px 0 12px; }
+.node p { font-size: 25px; line-height: 1.32; color: var(--dim); }
+.node.hot { border-color: var(--or); background: #2a1e18; }
+.node.out { border-color: var(--gr); }
+svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+
+/* таблица моделей */
+table.models { width: 100%; border-collapse: collapse; font-size: 30px; }
+table.models td { padding: 15px 18px 15px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.models td:first-child { font: 700 36px/1.1 Fira; white-space: nowrap; width: 300px; }
+table.models td:last-child { text-align: right; white-space: nowrap; font: 600 24px/1.4 JB, monospace; }
+.tpu { color: #b35c12; } .cpu { color: #b0322a; }
+
+/* шаги */
+.steps { display: flex; gap: 22px; }
+.step { flex: 1; border-top: 4px solid var(--or); padding-top: 22px; }
+.step b { display: block; font: 600 24px/1 JB, monospace; color: var(--or); margin-bottom: 14px; }
+.step p { font-size: 33px; line-height: 1.3; }
+
+/* бар узкого места */
+.bar { height: 92px; border-radius: 12px; overflow: hidden; display: flex; font: 600 26px/92px JB, monospace; }
+.bar .a { background: var(--or); color: #1a0e04; padding: 0 14px; white-space: nowrap; }
+.bar .b { flex: 1; background: #283463; color: var(--dim); padding-left: 26px; }
+
+/* таймлайн */
+.tl { display: flex; gap: 30px; margin-top: 40px; }
+.tl .d { flex: 1; border-top: 4px solid #c9b994; padding-top: 22px; position: relative; }
+.tl .d::before { content: ""; position: absolute; top: -14px; left: 0; width: 22px; height: 22px; border-radius: 50%; background: #b35c12; }
+.tl .d h5 { font: 700 54px/1 Fira; margin-bottom: 10px; }
+.tl .d .t { font: 600 22px/1 JB, monospace; color: #8a6a3a; margin-bottom: 18px; letter-spacing: .06em; }
+.tl .d p { font-size: 31px; line-height: 1.34; color: var(--ink2); margin-bottom: 16px; }
+.tl .d p b { color: var(--ink); }
+
+/* карточки причин */
+.reasons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+.reasons .card h4 { font: 700 44px/1 Fira; margin-bottom: 14px; }
+.reasons .card p { font-size: 27px; line-height: 1.34; color: var(--dim); }
+.quote { border-left: 6px solid var(--ye); padding: 8px 0 8px 32px; font-size: 32px; line-height: 1.4; }
+.quote small { display: block; font: 500 22px/1.3 JB, monospace; color: var(--mute); margin-top: 12px; }
+
+/* интерфейс плеера */
+#hud { position: fixed; right: 18px; bottom: 14px; display: flex; gap: 6px; align-items: center; transition: opacity .4s; z-index: 5; }
+#hud span { width: 8px; height: 8px; border-radius: 50%; background: rgba(238,241,248,.25); cursor: pointer; }
+#hud span.on { background: var(--or); }
+#hud b { font: 600 14px/1 JB, monospace; color: rgba(238,241,248,.6); margin-left: 8px; }
+#help { position: fixed; left: 18px; bottom: 14px; font: 13px/1 Golos, sans-serif; color: rgba(238,241,248,.5); transition: opacity .4s; z-index: 5; }
+body.idle { cursor: none; } body.idle #hud, body.idle #help { opacity: 0; }
+#notes { position: fixed; left: 0; right: 0; bottom: 0; max-height: 36vh; overflow: auto; padding: 18px 24px 42px; z-index: 6;
+  background: rgba(4,6,15,.95); border-top: 1px solid rgba(255,255,255,.12); font: 19px/1.5 Golos, sans-serif; color: #eef1f8;
+  transform: translateY(100%); transition: transform .25s; }
+body.notes #notes { transform: none; }
+#notes h6 { font: 600 12px/1 JB, monospace; letter-spacing: .14em; text-transform: uppercase; color: var(--or); margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1. Титул -->
+<section class="slide grid" data-notes="Привет! Я Сергей, команда ICEQ. Расскажу, как мы с Михаилом Вершининым за три дня сделали LinQ Guard — систему видеоконтроля охраны труда на российском ИИ-ускорителе — и взяли 2 место в кейсе LinQ на хакатоне «Открой#Моспром». Будет про задачу, архитектуру, перенос нейросетей на чип и про то, что, как мне кажется, решило исход.">
+  <div class="eyebrow">Открой#Моспром · кейс LinQ · октябрь 2026</div>
+  <h1>LinQ Guard</h1>
+  <p style="font-size:46px;line-height:1.25;max-width:1150px;margin-top:40px">Как мы за три дня сделали видеоконтроль охраны труда на российском ИИ-ускорителе</p>
+  <div class="title-badge"><b>2</b><span>место в кейсе</span><small>150 000 ₽</small></div>
+  <div class="row" style="gap:28px;margin-top:auto;margin-bottom:70px">
+    <div class="card col"><div class="k" style="font-size:84px;color:var(--cy)">10</div><div class="lbl" style="font-size:26px">видов нарушений</div></div>
+    <div class="card col"><div class="k" style="font-size:84px;color:var(--ye)">8</div><div class="lbl" style="font-size:26px">камер вживую</div></div>
+    <div class="card col"><div class="k" style="font-size:84px;color:var(--or)">6 из 7</div><div class="lbl" style="font-size:26px">нейросетей на ускорителе LinQ</div></div>
+    <div class="card col"><div class="k" style="font-size:84px;color:var(--gr)">8–13 мс</div><div class="lbl" style="font-size:26px">на кадр на чипе</div></div>
+  </div>
+  <div class="foot" style="color:var(--dim);font-size:26px">Сергей Катцын · команда ICEQ · вместе с Михаилом Вершининым</div>
+</section>
+
+<!-- 2. Хакатон -->
+<section class="slide grid" data-notes="Открой#Моспром — молодёжный хакатон с кейсами от компаний-постановщиков. Формат жёсткий: три дня, три чек-поинта с экспертами, где смотрят прогресс и дают обратную связь, и финальная защита всего на три минуты. К 10 утра последнего дня нужно было сдать код, README, тизер и презентацию.">
+  <div class="eyebrow">01 · Хакатон</div>
+  <h2>Открой#Моспром</h2>
+  <div class="row" style="gap:28px;margin-top:30px">
+    <div class="card col" style="min-height:420px"><div class="k" style="font-size:190px;color:var(--ye)">3</div><div class="lbl">дня, 23–25 октября</div></div>
+    <div class="card col" style="min-height:420px"><div class="k" style="font-size:190px;color:var(--cy)">3</div><div class="lbl">чек-поинта с экспертами и обратной связью</div></div>
+    <div class="card col" style="min-height:420px"><div class="k" style="font-size:190px;color:var(--or)">3</div><div class="lbl">минуты на финальную защиту</div></div>
+    <div class="card col" style="min-height:420px"><div class="k" style="font-size:150px;color:var(--gr);margin-top:24px">10:00</div><div class="lbl">дедлайн: код, README, тизер, презентация</div></div>
+  </div>
+  <p class="dim" style="margin-top:70px;font-size:38px">Молодёжный хакатон с реальными кейсами от компаний. Мы выбрали кейс LinQ, российского разработчика ИИ-ускорителей.</p>
+</section>
+
+<!-- 3. Кейс -->
+<section class="slide paper" data-notes="Задача кейса: веб-сервис, который по видео с камер находит нарушения техники безопасности. Ключевое условие — инференс обязательно на ускорителе LinQ, с замерами скорости. Отдельно перечислены обязательные требования и желательные. Обратите внимание на «одно нарушение — одно оповещение»: это важно, иначе начальник смены утонет в спаме.">
+  <div class="eyebrow">02 · Кейс LinQ</div>
+  <h2>Задача</h2>
+  <p class="quote" style="border-color:#b35c12;font-size:38px;margin-bottom:52px">Сервис, который по видео с камер находит нарушения техники безопасности.<br><b>Инференс — обязательно на российском ускорителе LinQ, с замерами скорости.</b></p>
+  <div class="row" style="gap:60px">
+    <div class="col">
+      <div class="mono" style="font-size:24px;color:#b35c12;margin-bottom:8px;letter-spacing:.1em">ОБЯЗАТЕЛЬНО</div>
+      <ul class="clean" style="font-size:30px">
+        <li>видеопотоки с камер или наборы снимков</li>
+        <li>распознавание нарушений нейросетями</li>
+        <li>оповещение с кадром, камерой и временем</li>
+        <li>одно нарушение — одно оповещение</li>
+        <li>журнал событий с фильтрами</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="mono" style="font-size:24px;color:#b35c12;margin-bottom:8px;letter-spacing:.1em">ЖЕЛАТЕЛЬНО</div>
+      <ul class="clean" style="font-size:30px">
+        <li>зоны и правила под каждую камеру</li>
+        <li>дашборд со статистикой</li>
+        <li>подтверждение и отклонение оператором</li>
+        <li>несколько потоков одновременно</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Проблема -->
+<section class="slide grid" data-notes="Почему это важно. По данным Минтруда, 65% несчастных случаев на производстве связаны с человеческим фактором: без каски, без жилета, с телефоном, слишком близко к технике. Камеры при этом уже висят почти везде, но работают как архив: запись поднимают после травмы. Оператор физически не уследит за десятками экранов.">
+  <div class="eyebrow">03 · Проблема</div>
+  <div class="row" style="align-items:center;gap:90px;margin-top:30px">
+    <div style="flex:0 0 720px">
+      <div class="k" style="font-size:330px;color:var(--ye)">65%</div>
+      <p style="font-size:40px;line-height:1.25;margin-top:10px">несчастных случаев на производстве связаны с человеческим фактором</p>
+      <p class="mono" style="font-size:22px;color:var(--mute);margin-top:18px">Минтруд России, 2024</p>
+    </div>
+    <div class="col">
+      <ul class="clean" style="font-size:36px">
+        <li>Камеры висят почти в каждом цехе, но запись смотрят после травмы</li>
+        <li>Оператор не уследит за десятками экранов</li>
+        <li>Обход инженера по охране труда выборочный</li>
+        <li>Нет статистики, где и когда нарушают чаще</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 5. Идея -->
+<section class="slide grid" data-notes="Главная мысль, которую мы держали весь хакатон: ценность не в том, чтобы нейросеть нашла каску. Ценность в том, что нарушение устранили. Поэтому система не просто детектирует, а ведёт нарушение до конца: тревога ответственному, срок, отметка «Устранено» с отчётом и эскалация руководителю, если не успели. Эксперты на втором чек-поинте сказали то же самое: промбез — это онлайн и быстрая реакция.">
+  <div class="eyebrow">04 · Идея</div>
+  <div class="motto" style="margin-top:20px">
+    <div style="color:var(--cy)">Увидели.</div>
+    <div style="color:var(--ye)">Сообщили.</div>
+    <div style="color:var(--gr)">Устранили в срок.</div>
+  </div>
+  <p class="dim" style="font-size:36px;margin-top:46px;max-width:1500px">Ценность не в детекции, а в том, что нарушение устранили: у каждой тревоги есть ответственный, срок и отчёт.</p>
+</section>
+
+<!-- 6. Фильм -->
+<section class="slide grid" style="padding-top:80px" data-notes="Вот как это выглядит за смену. Это фильм, который мы показывали на защите. Камеры, модель видит каждого человека — это скелеты — и предметы с уверенностью. Нарушение подтверждается во времени, и только тогда уходит тревога начальнику смены в Telegram. Все рамки и тревоги — настоящие срабатывания системы. (Пробел — пауза)">
+  <div class="eyebrow">05 · Как это выглядит</div>
+  <h2 style="font-size:76px;margin-bottom:32px">Смена: 10 видов нарушений, 10 тревог</h2>
+  <div class="vid" style="width:1400px;height:788px;align-self:center"><video src="../v/film.mp4" poster="../s/poster3.jpg" preload="metadata" playsinline></video><div class="vbar"><i></i></div></div>
+</section>
+
+<!-- 7. Схема -->
+<section class="slide grid" data-notes="Архитектура — путь одного кадра. Кадр с камеры или из файла уменьшаем до 640 на 640. Тяжёлая часть нейросетей, свёртки, считается на ускорителе LinQ в INT8: кадр уходит через очередь RabbitMQ на воркеры с чипами. На процессоре остаётся только хвост — декодирование рамок и подавление дублей. Дальше трекер понимает, что это тот же человек, что кадр назад, правила решают, нарушение ли это, и подтверждают его во времени. Одно нарушение — одно событие: в журнал с кадром и роликом, критичное — сразу начальнику смены в Telegram.">
+  <div class="eyebrow">06 · Архитектура</div>
+  <h2 style="margin-bottom:40px">Путь одного кадра</h2>
+  <div class="flow">
+    <svg class="wires" viewBox="0 0 1640 640" preserveAspectRatio="none">
+      <g stroke="#3a4a85" stroke-width="4" fill="none" stroke-linecap="round">
+        <path d="M360 115 H427"/><path d="M787 115 H853"/><path d="M1213 115 H1280"/>
+        <path d="M1460 230 V295 H180 V360"/>
+        <path d="M360 475 H427"/><path d="M787 475 H853"/><path d="M1213 475 H1280"/>
+      </g>
+      <g fill="#f2922b"><circle cx="427" cy="115" r="7"/><circle cx="853" cy="115" r="7"/><circle cx="1280" cy="115" r="7"/>
+        <circle cx="180" cy="360" r="7"/><circle cx="427" cy="475" r="7"/><circle cx="853" cy="475" r="7"/><circle cx="1280" cy="475" r="7"/></g>
+    </svg>
+    <div class="node" style="left:0;top:0"><div class="n">01</div><h4>Камера</h4><p>IP-камера или видеофайл, 5 кадров в секунду</p></div>
+    <div class="node" style="left:427px;top:0"><div class="n">02</div><h4>Подготовка</h4><p>кадр 640×640 на CPU</p></div>
+    <div class="node hot" style="left:853px;top:0"><div class="n">03</div><h4>LinQ TPU</h4><p>свёртки в INT8, через RabbitMQ на 16 воркеров</p></div>
+    <div class="node" style="left:1280px;top:0"><div class="n">04</div><h4>Хвост на CPU</h4><p>рамки и подавление дублей</p></div>
+    <div class="node" style="left:0;top:360px"><div class="n">05</div><h4>Трекер</h4><p>тот же человек, что кадр назад</p></div>
+    <div class="node" style="left:427px;top:360px"><div class="n">06</div><h4>Правила</h4><p>10 видов нарушений, подтверждение во времени</p></div>
+    <div class="node" style="left:853px;top:360px"><div class="n">07</div><h4>Событие</h4><p>одно нарушение — одна тревога, кадр и ролик ±4 с</p></div>
+    <div class="node out" style="left:1280px;top:360px"><div class="n">08</div><h4>Люди</h4><p>Telegram-бот, мини-апп, дашборд, журнал</p></div>
+  </div>
+</section>
+
+<!-- 8. Модели -->
+<section class="slide paper" data-notes="Под капотом семь нейросетей. Поза человека с 17 точками скелета — из неё считаем падение, неподвижное лежание, бег и дистанцию до техники. Своя модель касок, жилеты, погрузчики, огонь и дым с проверкой цвета пламени, сигарета, телефон. Важно: нейросеть только находит объекты, а нарушение решают правила. Поэтому новый вид нарушения добавляется новым правилом без переделки системы — это было прямо в требованиях кейса.">
+  <div class="eyebrow">07 · Нейросети</div>
+  <h2 style="margin-bottom:34px">7 нейросетей и 10 правил поверх них</h2>
+  <div class="row" style="gap:60px">
+    <div style="flex:0 0 1180px">
+      <table class="models">
+        <tr><td>YOLOv8n-pose</td><td>человек и 17 точек скелета: падение, лежит, бег, дистанция</td><td class="tpu">TPU</td></tr>
+        <tr><td>YOLOv8s, своя</td><td>каска и голова без каски</td><td class="cpu">CPU · FP32</td></tr>
+        <tr><td>YOLOv8</td><td>сигнальный жилет</td><td class="tpu">TPU</td></tr>
+        <tr><td>YOLOv8</td><td>погрузчик</td><td class="tpu">TPU</td></tr>
+        <tr><td>YOLOv8</td><td>огонь и дым, плюс проверка цвета пламени</td><td class="tpu">TPU</td></tr>
+        <tr><td>YOLO11</td><td>сигарета у рук или лица</td><td class="tpu">TPU</td></tr>
+        <tr><td>YOLOv8s</td><td>телефон в руках</td><td class="tpu">TPU</td></tr>
+      </table>
+    </div>
+    <div class="col">
+      <div class="card" style="background:#141a2c;color:#eef1f8;border:0">
+        <div class="mono" style="font-size:22px;color:var(--ye);letter-spacing:.1em">ПРИНЦИП</div>
+        <p style="font-size:34px;line-height:1.3;margin-top:16px">Нейросеть находит объекты. Нарушение решают <b style="color:var(--ye)">правила</b>.</p>
+        <p style="font-size:28px;line-height:1.35;margin-top:22px;color:#b3bcd8">Новое нарушение — новое правило, систему переделывать не нужно.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 9. Каски -->
+<section class="slide grid" data-notes="Отдельная история — каски. Открытая модель с Hugging Face на тестовых снимках находила голову без каски всего в 5% случаев. Мы дообучили свою YOLOv8s на открытом датасете СИЗ на GPU и проверяли на 2751 снимке, которых не было в обучении. Наша находит 85% голов без каски, mAP50 0,93 против 0,29. Это то, что экспертам понравилось больше всего: не взяли готовое, а сделали лучше и доказали цифрами.">
+  <div class="eyebrow">08 · Дообучение</div>
+  <h2>Открытая модель почти не видела голов без каски</h2>
+  <div class="row" style="gap:40px;align-items:stretch">
+    <div class="card col" style="padding:46px">
+      <div class="mono" style="font-size:24px;color:var(--mute);letter-spacing:.1em">ОТКРЫТАЯ МОДЕЛЬ</div>
+      <div class="k" style="font-size:250px;color:var(--re);margin-top:10px">5%</div>
+      <div class="lbl" style="font-size:32px">голов без каски находит · mAP50 0,29</div>
+    </div>
+    <div class="card col" style="padding:46px;border-color:var(--gr)">
+      <div class="mono" style="font-size:24px;color:var(--gr);letter-spacing:.1em">НАША YOLOv8s</div>
+      <div class="k" style="font-size:250px;color:var(--gr);margin-top:10px">85%</div>
+      <div class="lbl" style="font-size:32px">голов без каски находит · mAP50 0,93</div>
+    </div>
+  </div>
+  <div class="foot">Дообучение на GPU на открытом датасете СИЗ (jhboyo/ppe-dataset) · тест на 2751 снимке, которых не было в обучении</div>
+</section>
+
+<!-- 10. TPU -->
+<section class="slide grid" data-notes="Главное по кейсу — перенос на ускоритель LinQ. Экспортируем модель в ONNX со статичным входом. Режем сеть по последним свёрткам: всё тяжёлое уходит на чип, на процессоре остаётся лёгкий хвост. Квантуем в INT8, причём калибруем не на случайном шуме, как в примере SDK, а на кадрах наших камер. Дообучаем пороги квантования и компилируем самым сильным пресетом O5. Результат: поза на чипе 8,5 миллисекунды, после переноса людей находит так же, как исходная модель, в 98% случаев. А модели одной камеры мы склеили в одну программу ускорителя — кадр едет на чип один раз, это в 1,4–2,6 раза быстрее.">
+  <div class="eyebrow">09 · LinQ TPU</div>
+  <h2>Как модель попала на чип</h2>
+  <div class="steps">
+    <div class="step"><b>01</b><p>ONNX со статичным входом 640×640</p></div>
+    <div class="step"><b>02</b><p>Срез сети: свёртки на чип, хвост на CPU</p></div>
+    <div class="step"><b>03</b><p>Калибровка на кадрах наших камер</p></div>
+    <div class="step"><b>04</b><p>INT8 и дообучение порогов квантования</p></div>
+    <div class="step"><b>05</b><p>Компиляция пресетом O5</p></div>
+  </div>
+  <div class="row" style="gap:28px;margin-top:90px">
+    <div class="card col" style="padding:44px 40px"><div class="k" style="font-size:140px;color:var(--or)">8,5 мс</div><div class="lbl">поза на чипе, около 117 кадров в секунду</div></div>
+    <div class="card col" style="padding:44px 40px"><div class="k" style="font-size:140px;color:var(--cy)">98%</div><div class="lbl">людей находит так же, как исходная модель</div></div>
+    <div class="card col" style="padding:44px 40px"><div class="k" style="font-size:140px;color:var(--ye)">×1,4–2,6</div><div class="lbl">модели камеры склеены в одну программу</div></div>
+  </div>
+</section>
+
+<!-- 11. Узкое место -->
+<section class="slide grid" data-notes="Честные замеры. На чипе модель считается за 8,5 миллисекунды, а весь запрос через общий стенд организаторов — около 300. 97% времени уходит на очередь, сеть и сериализацию, а не на чип. На своём сервере с ускорителем это реальное время, около 15 камер на чип. И осознанное решение: модель касок после INT8 находила голову без каски в 1% случаев, поэтому её мы оставили в полной точности на процессоре. Точность для охраны труда важнее скорости, эксперты это прямо подтвердили.">
+  <div class="eyebrow">10 · Честные замеры</div>
+  <h2>Чип быстрый, тормозит всё вокруг</h2>
+  <div class="mono" style="font-size:24px;color:var(--mute);margin-bottom:14px">ОДИН ЗАПРОС ЧЕРЕЗ СТЕНД ОРГАНИЗАТОРОВ ≈ 310 МС</div>
+  <div class="bar"><div class="a">чип 8,5 мс</div><div class="b">очередь RabbitMQ, сеть, сериализация, 1,5 ядра CPU на контейнер</div></div>
+  <div class="row" style="gap:40px;margin-top:64px">
+    <div class="card col"><h4 class="k" style="font-size:52px;margin-bottom:16px">Свой сервер с LinQ</h4><p class="dim" style="font-size:30px">Реальное время, около 15 камер на один чип при 5 кадрах в секунду.</p></div>
+    <div class="card col" style="border-color:var(--re)"><h4 class="k" style="font-size:52px;margin-bottom:16px">Каски — в FP32, сознательно</h4><p class="dim" style="font-size:30px">После INT8 «голова без каски» находилась в 1% случаев. Точность важнее скорости.</p></div>
+  </div>
+</section>
+
+<!-- 12. Бот -->
+<section class="slide paper" data-notes="Что получает человек на заводе. Начальнику смены в Telegram приходит тревога: кадр, камера, срок устранения и кнопка видео — ролик плюс-минус четыре секунды для проверки. Он жмёт «Принял», потом «Устранено» с коротким отчётом. Не успел за 30 минут — уведомление получает руководитель. Оператор видит ленту всех камер, рабочий находит себя по фото и видит свои нарушения. (Пробел — пауза)">
+  <div class="eyebrow">11 · Для завода</div>
+  <h2 style="font-size:84px;margin-bottom:36px">Ни одно нарушение не остаётся без ответа</h2>
+  <div class="row" style="gap:44px;align-items:flex-start">
+    <div class="vid" style="flex:0 0 1160px;height:653px"><video src="../v/bot.mp4" poster="../s/poster6.jpg" preload="metadata" playsinline></video><div class="vbar"><i></i></div></div>
+    <div class="col">
+      <ul class="clean" style="font-size:28px;line-height:1.3">
+        <li><b>Начальник смены</b><br><span class="dim">тревога с кадром и сроком, «Принял» и «Устранено» с отчётом</span></li>
+        <li><b>Руководитель</b><br><span class="dim">что не закрыто за 30 минут, время реакции</span></li>
+        <li><b>Оператор</b><br><span class="dim">лента всех камер, передаёт нарушение начальнику</span></li>
+        <li><b>Рабочий</b><br><span class="dim">свои нарушения, находит себя по фото</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 13. Стенд -->
+<section class="slide grid" data-notes="Всё это работало не на нашем ноутбуке, а на стенде организаторов, на их ускорителе. Сервис, бот и туннель наружу жили в нашем контейнере JupyterHub с полутора ядрами процессора. В мини-аппе были кнопки с примерами: нажимаешь «огонь», ролик уходит на TPU, и через 10–20 секунд в боте тревога. На защите эксперты могли открыть бота по QR-коду и сами всё потрогать. А чтобы ночью ничего не упало, был сторож, который поднимает упавшее, и внешний монитор, который пишет в Telegram.">
+  <div class="eyebrow">12 · Прод на чужом железе</div>
+  <div class="row" style="gap:80px;align-items:flex-start">
+    <div class="col">
+      <h2>Работало на стенде организаторов</h2>
+      <ul class="clean" style="font-size:33px">
+        <li>Сервис, бот и туннель в нашем контейнере JupyterHub, 1,5 ядра CPU</li>
+        <li>Кнопка «огонь» в мини-аппе: ролик уходит на TPU, тревога в боте через 10–20 с</li>
+        <li>Все 8 камер цеха вживую с разметкой прямо в Telegram</li>
+        <li>Сторож поднимает упавшее, внешний монитор пишет в Telegram</li>
+        <li>На защите эксперты сами открывали бота по QR-коду</li>
+      </ul>
+    </div>
+    <div style="flex:0 0 560px;border-radius:44px;border:10px solid #1e2850;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5);margin-top:10px">
+      <img src="img/cams.jpg" alt="Мини-апп: все камеры цеха" style="width:100%;display:block">
+    </div>
+  </div>
+</section>
+
+<!-- 14. Три дня -->
+<section class="slide paper" data-notes="Как шли эти три дня. Первый день — разобрались с кейсом, подключились к стенду через VPN, подняли первый прототип прямо на их TPU, с веб-камерой. Утром второго дня второй чек-поинт, и эксперты дали ключевой фидбэк: точность важнее скорости, нужна онлайн-реакция и роли. Весь второй день — интеграция продукта со стендом, бот, склейка моделей, лайв на TPU. Ночью упаковка: README, тизер, презентация, фильм. И утром сдача и защита на три минуты.">
+  <div class="eyebrow">13 · Три дня</div>
+  <h2>Как это было</h2>
+  <div class="tl">
+    <div class="d"><h5>23 октября</h5><div class="t">ДЕНЬ 1 · ЧП 1</div><p>Разобрали кейс, подключились к стенду LinQ через VPN</p><p><b>Первый прототип прямо на их TPU</b>, вживую с веб-камеры</p></div>
+    <div class="d"><h5>24 октября</h5><div class="t">УТРО · ЧП 2</div><p>Фидбэк экспертов: <b>точность важнее скорости</b>, нужны онлайн-реакция и роли</p><p>Интеграция продукта со стендом</p></div>
+    <div class="d"><h5>24 октября</h5><div class="t">ДЕНЬ · ЧП 3</div><p>Telegram-бот и мини-апп, склейка моделей, <b>лайв на TPU</b></p><p>Сервис переехал на стенд организаторов</p></div>
+    <div class="d"><h5>Ночь</h5><div class="t">УПАКОВКА</div><p>README, тизер, презентация, <b>фильм «Смена»</b></p><p>Сторож и мониторинг, чтобы стенд не уснул</p></div>
+    <div class="d"><h5>25 октября</h5><div class="t">СДАЧА · ЗАЩИТА</div><p>Сдали в 10:00, в 12:00 защита на <b>3 минуты</b></p><p>Итог: <b>2 место</b> в кейсе</p></div>
+  </div>
+</section>
+
+<!-- 15. Почему 2 место -->
+<section class="slide grid" data-notes="Почему нас заметили. Первое — подача: вместо скриншотов фильм на минуту, где всё видно, и QR-код бота прямо на обложке, эксперты могли сами потрогать продукт. Второе — мы продавали не детекцию, а устранение, трекер так и написал в отзыве. Третье — дообученная модель касок с цифрами. Четвёртое — всё реально работало на их ускорителе, с честными замерами. И пятое — мы работали от фидбэка: что эксперты сказали на чек-поинте, к вечеру было в продукте.">
+  <div class="eyebrow">14 · Что сработало</div>
+  <h2 style="margin-bottom:40px">Почему нас заметили</h2>
+  <div class="reasons">
+    <div class="card"><h4 style="color:var(--ye)">Подача</h4><p>Фильм на минуту вместо скриншотов, QR бота на обложке</p></div>
+    <div class="card"><h4 style="color:var(--gr)">Польза, а не детекция</h4><p>Срок, ответственный и отчёт об устранении</p></div>
+    <div class="card"><h4 style="color:var(--cy)">Своя модель</h4><p>Каски: 85% против 5% у открытой, с честным тестом</p></div>
+    <div class="card"><h4 style="color:var(--or)">Работает на их чипе</h4><p>6 моделей из 7 на TPU, замеры без приукрашивания</p></div>
+    <div class="card"><h4 style="color:var(--re)">Работали от фидбэка</h4><p>Что сказали на чек-поинте, к вечеру было в продукте</p></div>
+    <div class="card" style="background:transparent;border-style:dashed"><p class="quote" style="font-size:27px;color:var(--fg)">«Сфокусировали команду на предотвращении событий, а не их детекции. Готова интеграция с ТПУ, что очень важно»<small>трекер, отзыв на чек-поинте</small></p></div>
+  </div>
+</section>
+
+<!-- 16. Выводы -->
+<section class="slide paper" data-notes="Что бы мы сделали иначе. Не успели проверить на настоящих IP-камерах, нет межкамерного трекинга, каски так и не удалось квантовать без потерь, а у падений полнота всего 40% — мы сознательно держали упор на точность. Что забираем с собой: начинать с пользы для заказчика, а не с модели. Показывать работающее, а не слайды. Честные цифры и оговорки вызывают больше доверия, чем красивые. И фидбэк экспертов на чек-поинтах — это бесплатный консалтинг, его надо использовать по максимуму.">
+  <div class="eyebrow">15 · Выводы</div>
+  <h2>Что забираем с собой</h2>
+  <div class="row" style="gap:60px">
+    <div class="col">
+      <div class="mono" style="font-size:24px;color:#b0322a;margin-bottom:8px;letter-spacing:.1em">НЕ УСПЕЛИ</div>
+      <ul class="clean" style="font-size:31px">
+        <li>проверить на настоящих IP-камерах</li>
+        <li>межкамерный трекинг людей</li>
+        <li>каски в INT8 без потери точности</li>
+        <li>поднять полноту на падениях выше 40%</li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="mono" style="font-size:24px;color:#2c7a50;margin-bottom:8px;letter-spacing:.1em">ВЫВОДЫ</div>
+      <ul class="clean" style="font-size:31px">
+        <li>начинать с пользы для заказчика, а не с модели</li>
+        <li>показывать работающее, а не слайды</li>
+        <li>честные цифры вызывают больше доверия, чем красивые</li>
+        <li>фидбэк на чек-поинтах — бесплатный консалтинг</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 17. Итог -->
+<section class="slide grid" data-notes="Итог: 2 место в кейсе LinQ и 150 тысяч рублей. Код, модели, программы для ускорителя и все видео лежат в открытом репозитории, QR-код на экране. Спасибо, буду рад вопросам.">
+  <div class="row" style="align-items:center;gap:80px;height:100%">
+    <div class="col">
+      <div class="eyebrow">Итог</div>
+      <div class="k" style="font-size:250px;color:var(--ye)">2 место</div>
+      <div class="k" style="font-size:110px;margin-top:16px">150 000 ₽</div>
+      <p class="dim" style="font-size:36px;margin-top:40px">Код, модели, программы для LinQ и видео — в открытом репозитории</p>
+      <p class="mono" style="font-size:26px;color:var(--cy);margin-top:18px">github.com/PhantomDev2059/mosProm</p>
+      <p style="font:700 80px/1 Fira;margin-top:70px">Спасибо! Вопросы?</p>
+    </div>
+    <img src="img/qr_card.jpg" alt="QR-код на репозиторий" style="flex:0 0 520px;width:520px;border-radius:18px">
+  </div>
+</section>
+
+</div>
+<div id="hud"></div>
+<div id="help">← → листать · F — весь экран · N — заметки · пробел — пауза видео</div>
+<div id="notes"><h6>Заметки · слайд <span id="nn"></span></h6><p id="nt"></p></div>
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const hud = document.getElementById('hud');
+  let cur = -1;
+  function fit() {
+    const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+    stage.style.transform = `scale(${s}) translate(-50%, -50%)`;
+    stage.style.transformOrigin = '0 0';
+    stage.style.left = '50%'; stage.style.top = '50%';
+    stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+    stage.style.transformOrigin = 'center center';
+  }
+  addEventListener('resize', fit); fit();
+  slides.forEach((_, i) => { const d = document.createElement('span'); d.onclick = (e) => { e.stopPropagation(); go(i); }; hud.appendChild(d); });
+  const count = document.createElement('b'); hud.appendChild(count);
+  const dots = Array.from(hud.querySelectorAll('span'));
+  const vid = () => slides[cur].querySelector('video');
+  function play(v) { v.currentTime = 0; v.muted = false; v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }); }
+  function warm(i) { const v = slides[i] && slides[i].querySelector('video'); if (v && v.preload !== 'auto') { v.preload = 'auto'; v.load(); } }
+  function go(i) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    if (i === cur) return;
+    if (cur >= 0) { slides[cur].classList.remove('on'); const v = vid(); if (v) v.pause(); }
+    cur = i; slides[cur].classList.add('on');
+    const v = vid(); if (v) play(v);
+    warm(cur + 1); warm(cur - 1);
+    dots.forEach((d, k) => d.classList.toggle('on', k === cur));
+    count.textContent = (cur + 1) + ' / ' + slides.length;
+    document.getElementById('nn').textContent = cur + 1;
+    document.getElementById('nt').textContent = slides[cur].dataset.notes || '';
+    history.replaceState(null, '', '#' + (cur + 1));
+  }
+  function toggle() { const v = vid(); if (!v) return false; if (v.paused || v.ended) { if (v.ended) v.currentTime = 0; v.muted = false; v.play(); } else v.pause(); return true; }
+  function fs() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {}); }
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (['arrowright', 'pagedown', 'enter'].includes(k)) go(cur + 1);
+    else if (['arrowleft', 'pageup', 'backspace'].includes(k)) go(cur - 1);
+    else if (k === ' ') { if (!toggle()) go(cur + (e.shiftKey ? -1 : 1)); }
+    else if (k === 'home') go(0);
+    else if (k === 'end') go(slides.length - 1);
+    else if (k === 'f' || k === 'а') fs();
+    else if (k === 'n' || k === 'т') document.body.classList.toggle('notes');
+    else if (k === 'm' || k === 'ь') { const v = vid(); if (v) v.muted = !v.muted; }
+    else return;
+    e.preventDefault();
+  });
+  stage.addEventListener('click', (e) => {
+    if (e.target.tagName === 'VIDEO') { toggle(); return; }
+    go(cur + (e.clientX < innerWidth / 3 ? -1 : 1));
+  });
+  let tx = null;
+  addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
+  addEventListener('touchend', (e) => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx; tx = null; if (Math.abs(dx) > 50) go(cur + (dx < 0 ? 1 : -1)); });
+  slides.forEach((s) => { const v = s.querySelector('video'); if (!v) return; const bar = s.querySelector('.vbar i');
+    v.addEventListener('timeupdate', () => { bar.style.width = (v.duration ? v.currentTime / v.duration * 100 : 0) + '%'; }); });
+  let idle; const wake = () => { document.body.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => document.body.classList.add('idle'), 2500); };
+  addEventListener('mousemove', wake); wake();
+  go(Math.max(0, (parseInt(location.hash.slice(1), 10) || 1) - 1));
+})();
+</script>
+</body>
+</html>
